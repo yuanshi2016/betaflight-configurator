@@ -102,7 +102,15 @@ describe("autotune AI dock styles", () => {
         expect(component).toContain("group.data.writeable === true");
         expect(component).toContain("formatAggregateQualityStatus");
         expect(component).toContain("formatAggregateQualityReason");
-        expect(component).toContain("Singleton diagnostics");
+        expect(component).toContain('autotuneAiLocalAnalysis');
+        expect(component).toContain('autotuneAiDiagnostics');
+        expect(component).toContain('autotuneAiSelectedLogs');
+        expect(component).toContain('autotuneAiDataQuality');
+        expect(component).toContain('autotuneAiUserRole');
+        expect(component).toContain('autotuneAiAssistantRole');
+        expect(component).not.toContain('"Singleton diagnostics"');
+        expect(component).not.toContain('"User"');
+        expect(component).not.toContain('"AI"');
         expect(component).toContain("diagnostic?.sources");
         expect(component).toContain("recommendation?.priority");
     });

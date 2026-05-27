@@ -288,21 +288,32 @@
             <header class="autotune-ai-section__header">
                 <div class="autotune-ai-section__title">
                     <UIcon name="i-lucide-file-chart-column" class="size-4" />
-                    <h3>{{ $t("autotuneAiBblSourceTitle") }}</h3>
+                    <h3>{{ $t("autotuneAiLocalAnalysis") }}</h3>
                 </div>
             </header>
 
             <div class="autotune-ai-local-analysis__summary">
+                <div class="autotune-ai-local-analysis__reason">
+                    {{ $t("autotuneAiSelectedLogs") }}: {{ formatSelectedLogs(sessionState.localBblAnalysis.selectedLogIndexes) }}
+                </div>
                 <div class="autotune-ai-local-analysis__quality">
-                    {{ formatAggregateQualityStatus(sessionState.localBblAnalysis.aggregateQuality.status) }}
+                    {{
+                        $t("autotuneAiDataQuality")
+                    }}: {{ formatAggregateQualityStatus(sessionState.localBblAnalysis.aggregateQuality.status) }}
                 </div>
                 <div class="autotune-ai-local-analysis__reason">
                     {{ formatAggregateQualityReason(sessionState.localBblAnalysis.aggregateQuality.reason) }}
                 </div>
+                <div
+                    v-if="sessionState.bblSummary?.samples?.unsupportedEncodedFrames > 0"
+                    class="autotune-ai-local-analysis__reason"
+                >
+                    {{ $t("autotuneAiUnsupportedEncoding") }}
+                </div>
             </div>
 
             <div v-if="sessionState.localBblAnalysis.consensusDiagnostics.length" class="autotune-ai-local-analysis__group">
-                <h4 class="autotune-ai-local-analysis__heading">{{ localAnalysisLabels.consensusDiagnostics }}</h4>
+                <h4 class="autotune-ai-local-analysis__heading">{{ $t("autotuneAiDiagnostics") }}</h4>
                 <ul class="autotune-ai-local-analysis__list">
                     <li
                         v-for="(diagnostic, index) in sessionState.localBblAnalysis.consensusDiagnostics"
@@ -314,7 +325,7 @@
             </div>
 
             <div v-if="sessionState.localBblAnalysis.conflictingDiagnostics.length" class="autotune-ai-local-analysis__group">
-                <h4 class="autotune-ai-local-analysis__heading">{{ localAnalysisLabels.singletonDiagnostics }}</h4>
+                <h4 class="autotune-ai-local-analysis__heading">{{ $t("autotuneAiSingletonDiagnostics") }}</h4>
                 <ul class="autotune-ai-local-analysis__list">
                     <li
                         v-for="(diagnostic, index) in sessionState.localBblAnalysis.conflictingDiagnostics"
@@ -329,7 +340,7 @@
                 v-if="sessionState.localBblAnalysis.aggregateRecommendations.length"
                 class="autotune-ai-local-analysis__group"
             >
-                <h4 class="autotune-ai-local-analysis__heading">{{ localAnalysisLabels.aggregateRecommendations }}</h4>
+                <h4 class="autotune-ai-local-analysis__heading">{{ $t("autotuneAiAggregateRecommendations") }}</h4>
                 <ul class="autotune-ai-local-analysis__list">
                     <li
                         v-for="(recommendation, index) in sessionState.localBblAnalysis.aggregateRecommendations"
@@ -459,7 +470,7 @@
                     :class="`autotune-ai-message--${message.role}`"
                 >
                     <div class="autotune-ai-message__role">
-                        {{ message.role === "user" ? "User" : "AI" }}
+                        {{ message.role === "user" ? $t("autotuneAiUserRole") : $t("autotuneAiAssistantRole") }}
                     </div>
                     <pre class="autotune-ai-message__raw">{{ message.content }}</pre>
                 </article>
@@ -616,11 +627,6 @@ const optionalFields = [
     { key: "motorOutputLimit", labelKey: "autotuneAiMotorOutputLimit", helpKey: "autotuneAiMotorOutputLimitHelp" },
 ];
 const notesField = { key: "notes", labelKey: "autotuneAiNotes", helpKey: "autotuneAiNotesHelp" };
-const localAnalysisLabels = {
-    consensusDiagnostics: "Shared diagnostics",
-    singletonDiagnostics: "Singleton diagnostics",
-    aggregateRecommendations: "Aggregate recommendations",
-};
 
 const parsedCliCount = computed(() => {
     const summary = sessionState.parsedCliSummary;
@@ -941,19 +947,31 @@ function confidenceLabelKey(confidence) {
 }
 
 function formatAggregateQualityStatus(status) {
-    return {
-        usable: "Ready for AI review",
-        degraded: "Usable with caution",
-        unusable: "Not usable yet",
-    }[status] || "Quality unknown";
+    return t(
+        {
+            usable: "autotuneAiAggregateQualityUsable",
+            degraded: "autotuneAiAggregateQualityDegraded",
+            unusable: "autotuneAiAggregateQualityUnusable",
+        }[status] || "autotuneAiAggregateQualityUnknown",
+    );
 }
 
 function formatAggregateQualityReason(reason) {
-    return {
-        all_selected_logs_usable: "Selected logs are aligned and suitable for combined analysis.",
-        includes_degraded_logs: "Some selected logs are weaker, so treat the aggregate result more cautiously.",
-        no_usable_logs: "No selected logs produced a usable combined analysis.",
-    }[reason] || "Local aggregate analysis is available for the selected logs.";
+    return t(
+        {
+            all_selected_logs_usable: "autotuneAiAggregateReasonAllSelectedLogsUsable",
+            includes_degraded_logs: "autotuneAiAggregateReasonIncludesDegradedLogs",
+            no_usable_logs: "autotuneAiAggregateReasonNoUsableLogs",
+        }[reason] || "autotuneAiAggregateReasonFallback",
+    );
+}
+
+function formatSelectedLogs(indexes = []) {
+    if (!Array.isArray(indexes) || !indexes.length) {
+        return "-";
+    }
+
+    return indexes.map((index) => index + 1).join(", ");
 }
 
 function formatDiagnosticSummary(diagnostic) {
