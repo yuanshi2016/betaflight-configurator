@@ -11,6 +11,7 @@ import { parseCliConfig } from "../js/autotune-ai/cliConfigParser";
 import { buildInputSourceSummary, detectAutotuneInputSource } from "../js/autotune-ai/inputSourceDetector";
 import { buildFirstTurnUserMessage, explainTuningAnalysis } from "../js/autotune-ai/providerAdapters";
 import { parseAiResponse } from "../js/autotune-ai/responseParser";
+import FC from "../js/fc";
 
 const PROVIDER_SETTINGS_KEY = "AutotuneAiProviderSettings";
 const CRAFT_CONTEXT_KEY = "AutotuneAiCraftContext";
@@ -411,35 +412,39 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         return sessionState.parsedCliSummary;
     }
 
+    function buildLocalAnalysisStaticConfig() {
+        if (FC?.RC_TUNING && Object.keys(FC.RC_TUNING).length) {
+            return {
+                rates: { ...FC.RC_TUNING },
+            };
+        }
+
+        if (sessionState.parsedCliSummary?.rates && Object.keys(sessionState.parsedCliSummary.rates).length) {
+            return {
+                rates: { ...sessionState.parsedCliSummary.rates },
+            };
+        }
+
+        return {};
+    }
+
     function analyzeSelectedBblLog(index) {
-        const availableLog = sessionState.bblSummary?.availableLogs?.find((candidate) => candidate.index === index);
-        if (!availableLog) {
+        if (!bblFileData.value || !sessionState.bblSummary?.fileName) {
             return null;
         }
 
+        const summary = buildBblSummary({
+            fileName: sessionState.bblSummary.fileName,
+            data: bblFileData.value,
+            selectedLogIndex: index,
+        });
+
         return {
-            logIndex: index,
+            logIndex: summary.selectedLogIndex,
             ...analyzeBblLog({
-                summary: {
-                    ...sessionState.bblSummary,
-                    selectedLogIndex: index,
-                    samples: {
-                        decodedMainFrames: availableLog.decodedMainFrames,
-                        corruptFrames: availableLog.corruptFrames,
-                        unsupportedEncodedFrames: availableLog.unsupportedEncodedFrames,
-                        skippedEventFrames: availableLog.skippedEventFrames,
-                        firstTimeUs: availableLog.firstTimeUs,
-                        lastTimeUs: availableLog.lastTimeUs,
-                        durationUs: availableLog.durationUs,
-                        truncated: availableLog.truncated,
-                    },
-                    fields: {
-                        ...sessionState.bblSummary?.fields,
-                        requiredColumns: availableLog.requiredColumns || sessionState.bblSummary?.fields?.requiredColumns || {},
-                    },
-                },
+                summary,
                 craftContext,
-                staticConfig: sessionState.parsedCliSummary || {},
+                staticConfig: buildLocalAnalysisStaticConfig(),
             }),
         };
     }
@@ -452,11 +457,18 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
             return null;
         }
 
-        const selectedIndexes = sessionState.selectedBblLogIndexes.length
-            ? sessionState.selectedBblLogIndexes
-            : [sessionState.bblSummary?.selectedLogIndex].filter(Number.isInteger);
+        const availableIndexes = new Set(
+            (sessionState.bblSummary.availableLogs || []).map((log) => log.index).filter(Number.isInteger),
+        );
+        const validSelectedIndexes = sessionState.selectedBblLogIndexes.filter((index) => availableIndexes.has(index));
+        const fallbackIndexes =
+            !validSelectedIndexes.length && availableIndexes.has(sessionState.bblSummary.selectedLogIndex)
+                ? [sessionState.bblSummary.selectedLogIndex]
+                : validSelectedIndexes;
 
-        const perLog = selectedIndexes.map((index) => analyzeSelectedBblLog(index)).filter(Boolean);
+        sessionState.selectedBblLogIndexes = fallbackIndexes;
+
+        const perLog = fallbackIndexes.map((index) => analyzeSelectedBblLog(index)).filter(Boolean);
         sessionState.localBblAnalysesByLog = Object.fromEntries(perLog.map((item) => [item.logIndex, item]));
         sessionState.localBblAnalysis = perLog.length ? aggregateBblAnalyses(perLog) : null;
         return sessionState.localBblAnalysis;
@@ -539,9 +551,7 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         sessionState.sourceFileName = sessionState.bblSummary.fileName;
         sessionState.sourceSummary =
             sessionState.parsedCliSummary || sessionState.csvSummary || sessionState.bblSummary || null;
-        if (!sessionState.selectedBblLogIndexes.length) {
-            sessionState.selectedBblLogIndexes = [index];
-        }
+        sessionState.selectedBblLogIndexes = [sessionState.bblSummary.selectedLogIndex];
         refreshLocalBblAnalysis();
         return sessionState.bblSummary;
     }
