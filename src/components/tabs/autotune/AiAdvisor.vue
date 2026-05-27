@@ -294,15 +294,15 @@
 
             <div class="autotune-ai-local-analysis__summary">
                 <div class="autotune-ai-local-analysis__quality">
-                    {{ sessionState.localBblAnalysis.aggregateQuality.status }}
+                    {{ formatAggregateQualityStatus(sessionState.localBblAnalysis.aggregateQuality.status) }}
                 </div>
                 <div class="autotune-ai-local-analysis__reason">
-                    {{ sessionState.localBblAnalysis.aggregateQuality.reason }}
+                    {{ formatAggregateQualityReason(sessionState.localBblAnalysis.aggregateQuality.reason) }}
                 </div>
             </div>
 
             <div v-if="sessionState.localBblAnalysis.consensusDiagnostics.length" class="autotune-ai-local-analysis__group">
-                <h4 class="autotune-ai-local-analysis__heading">Consensus diagnostics</h4>
+                <h4 class="autotune-ai-local-analysis__heading">{{ localAnalysisLabels.consensusDiagnostics }}</h4>
                 <ul class="autotune-ai-local-analysis__list">
                     <li
                         v-for="(diagnostic, index) in sessionState.localBblAnalysis.consensusDiagnostics"
@@ -314,7 +314,7 @@
             </div>
 
             <div v-if="sessionState.localBblAnalysis.conflictingDiagnostics.length" class="autotune-ai-local-analysis__group">
-                <h4 class="autotune-ai-local-analysis__heading">Conflicting or singleton diagnostics</h4>
+                <h4 class="autotune-ai-local-analysis__heading">{{ localAnalysisLabels.singletonDiagnostics }}</h4>
                 <ul class="autotune-ai-local-analysis__list">
                     <li
                         v-for="(diagnostic, index) in sessionState.localBblAnalysis.conflictingDiagnostics"
@@ -329,7 +329,7 @@
                 v-if="sessionState.localBblAnalysis.aggregateRecommendations.length"
                 class="autotune-ai-local-analysis__group"
             >
-                <h4 class="autotune-ai-local-analysis__heading">Aggregate recommendations</h4>
+                <h4 class="autotune-ai-local-analysis__heading">{{ localAnalysisLabels.aggregateRecommendations }}</h4>
                 <ul class="autotune-ai-local-analysis__list">
                     <li
                         v-for="(recommendation, index) in sessionState.localBblAnalysis.aggregateRecommendations"
@@ -353,7 +353,7 @@
                     variant="soft"
                     icon="i-lucide-upload"
                     :label="$t('autotuneAiWriteAll')"
-                    :disabled="!canWrite"
+                    :disabled="!canWrite || !hasWriteableSelectedGroups"
                     :loading="isWritingAny"
                     @click="writeAll"
                 />
@@ -398,7 +398,7 @@
                             >{{ $t("autotuneAiWriteError") }}</span>
                             <span v-else class="text-xs">{{ $t(confidenceLabelKey(group.data.confidence)) }}</span>
                             <UButton
-                                v-if="group.values.length"
+                                v-if="group.values.length && group.data.writeable === true"
                                 size="xs"
                                 variant="ghost"
                                 icon="i-lucide-upload"
@@ -461,11 +461,7 @@
                     <div class="autotune-ai-message__role">
                         {{ message.role === "user" ? "User" : "AI" }}
                     </div>
-                    <pre
-                        v-if="message.role === 'user' && isInitialPayloadMessage(message)"
-                        class="autotune-ai-message__raw"
-                    >{{ message.content }}</pre>
-                    <pre v-else class="autotune-ai-message__raw">{{ displayConversationMessage(message) }}</pre>
+                    <pre class="autotune-ai-message__raw">{{ message.content }}</pre>
                 </article>
             </div>
 
@@ -620,6 +616,11 @@ const optionalFields = [
     { key: "motorOutputLimit", labelKey: "autotuneAiMotorOutputLimit", helpKey: "autotuneAiMotorOutputLimitHelp" },
 ];
 const notesField = { key: "notes", labelKey: "autotuneAiNotes", helpKey: "autotuneAiNotesHelp" };
+const localAnalysisLabels = {
+    consensusDiagnostics: "Shared diagnostics",
+    singletonDiagnostics: "Singleton diagnostics",
+    aggregateRecommendations: "Aggregate recommendations",
+};
 
 const parsedCliCount = computed(() => {
     const summary = sessionState.parsedCliSummary;
@@ -773,12 +774,20 @@ const RC_TUNING_KEYS = new Set([
 ]);
 
 const canWrite = computed(() => connectionStore.connectionValid);
+const hasWriteableSelectedGroups = computed(() =>
+    recommendationGroups.value.some(
+        (group) =>
+            sessionState.selectedGroups[group.key] &&
+            group.data.writeable === true &&
+            group.values.length,
+    ),
+);
 
 const isWritingAny = computed(() => Object.values(writeState).some((s) => s === "loading"));
 
 async function writeGroup(groupKey, { skipEeprom = false } = {}) {
     const group = sessionState.aiResponse?.groups?.[groupKey];
-    if (!group || !Object.keys(group.values || {}).length) {
+    if (!group || group.writeable !== true || !Object.keys(group.values || {}).length) {
         return false;
     }
 
@@ -844,7 +853,7 @@ async function writeGroup(groupKey, { skipEeprom = false } = {}) {
 
 async function writeAll() {
     const groups = recommendationGroups.value
-        .filter((g) => sessionState.selectedGroups[g.key] && g.values.length)
+        .filter((g) => sessionState.selectedGroups[g.key] && g.data.writeable === true && g.values.length)
         .map((g) => g.key);
 
     if (!groups.length) {
@@ -931,22 +940,39 @@ function confidenceLabelKey(confidence) {
     }[confidence || "low"];
 }
 
-function isInitialPayloadMessage(message) {
-    return message.content.includes("Analyze this compact Betaflight tuning payload");
+function formatAggregateQualityStatus(status) {
+    return {
+        usable: "Ready for AI review",
+        degraded: "Usable with caution",
+        unusable: "Not usable yet",
+    }[status] || "Quality unknown";
+}
+
+function formatAggregateQualityReason(reason) {
+    return {
+        all_selected_logs_usable: "Selected logs are aligned and suitable for combined analysis.",
+        includes_degraded_logs: "Some selected logs are weaker, so treat the aggregate result more cautiously.",
+        no_usable_logs: "No selected logs produced a usable combined analysis.",
+    }[reason] || "Local aggregate analysis is available for the selected logs.";
 }
 
 function formatDiagnosticSummary(diagnostic) {
     const parts = [diagnostic?.type, diagnostic?.explanation, diagnostic?.confidence].filter(Boolean);
+    if (diagnostic?.sources) {
+        parts.push(`${diagnostic.sources} sources`);
+    }
     return parts.join(" - ");
 }
 
 function formatAggregateRecommendation(recommendation) {
-    const parts = [recommendation?.group, recommendation?.type, recommendation?.explanation].filter(Boolean);
+    const parts = [recommendation?.group, recommendation?.type].filter(Boolean);
+    if (recommendation?.priority) {
+        parts.push(`priority ${recommendation.priority}`);
+    }
+    if (recommendation?.explanation) {
+        parts.push(recommendation.explanation);
+    }
     return parts.join(" - ");
-}
-
-function displayConversationMessage(message) {
-    return message.content;
 }
 
 async function sendFollowUp() {

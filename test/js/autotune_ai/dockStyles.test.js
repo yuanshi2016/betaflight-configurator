@@ -95,4 +95,15 @@ describe("autotune AI dock styles", () => {
         expect(component).toContain("autotune-ai-local-analysis");
         expect(component).toContain("message.content");
     });
+
+    it("keeps non-writeable recommendation groups visible but blocks FC writes", () => {
+        const component = readFileSync("src/components/tabs/autotune/AiAdvisor.vue", "utf8");
+
+        expect(component).toContain("group.data.writeable === true");
+        expect(component).toContain("formatAggregateQualityStatus");
+        expect(component).toContain("formatAggregateQualityReason");
+        expect(component).toContain("Singleton diagnostics");
+        expect(component).toContain("diagnostic?.sources");
+        expect(component).toContain("recommendation?.priority");
+    });
 });

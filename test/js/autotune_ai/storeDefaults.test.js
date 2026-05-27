@@ -317,4 +317,39 @@ describe("autotune AI store defaults", () => {
     it("uses a token budget for conversation history", () => {
         expect(MAX_HISTORY_TOKENS).toBe(6000);
     });
+
+    it("keeps raw conversation history intact when follow-up requests need trimming", async () => {
+        const store = useAutotuneAiStore();
+        const longMessage = "x".repeat(9000);
+        const firstTurn = `Analyze this compact Betaflight tuning payload\n${longMessage}`;
+        const assistantReply = `assistant reply ${longMessage}`;
+        const followUpReply = `follow up reply ${longMessage}`;
+
+        mockExplainTuningAnalysis.mockResolvedValueOnce(followUpReply);
+        mockParseAiResponse.mockImplementation(() => ({ summary: "parsed" }));
+
+        store.sessionState.conversationHistory = [
+            { role: "user", content: firstTurn },
+            { role: "assistant", content: assistantReply },
+        ];
+        store.sessionState.followUpInput = "Need more detail";
+
+        await store.sendFollowUp();
+
+        expect(store.sessionState.conversationHistory[0].content).toBe(firstTurn);
+        expect(store.sessionState.conversationHistory[1].content).toBe(assistantReply);
+        expect(store.sessionState.conversationHistory[2]).toEqual({ role: "user", content: "Need more detail" });
+        expect(store.sessionState.conversationHistory[3]).toEqual({ role: "assistant", content: followUpReply });
+        expect(store.sessionState.conversationTrimmed).toBe(true);
+        expect(mockExplainTuningAnalysis).toHaveBeenCalledWith(
+            expect.anything(),
+            null,
+            expect.any(Array),
+            undefined,
+            expect.anything(),
+        );
+        const providerHistory = mockExplainTuningAnalysis.mock.calls[0][2];
+        expect(providerHistory.length).toBeLessThanOrEqual(store.sessionState.conversationHistory.length);
+        expect(providerHistory[0].content).not.toBe(store.sessionState.conversationHistory[0].content);
+    });
 });

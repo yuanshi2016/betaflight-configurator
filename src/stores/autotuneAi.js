@@ -591,10 +591,8 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
 
     function trimHistory() {
         const result = trimConversationHistoryToTokenBudget(sessionState.conversationHistory);
-        if (result.trimmed) {
-            sessionState.conversationHistory = result.history;
-            sessionState.conversationTrimmed = true;
-        }
+        sessionState.conversationTrimmed = result.trimmed;
+        return result.history;
     }
 
     function clearConversation() {
@@ -656,13 +654,13 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         sessionState.followUpInput = "";
         sessionState.followUpState = "loading";
         sessionState.lastError = "";
-        trimHistory();
+        const providerHistory = trimHistory();
 
         try {
             const rawResponse = await explainTuningAnalysis(
                 providerSettings,
                 null,
-                sessionState.conversationHistory,
+                providerHistory,
                 undefined,
                 { locale: i18n.getCurrentLocale() },
             );
