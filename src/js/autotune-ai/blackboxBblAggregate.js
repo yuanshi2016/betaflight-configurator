@@ -11,25 +11,6 @@ function getConfidenceLevel(confidence) {
     return index >= 0 ? index : 0;
 }
 
-function getHighestConfidence(diagnostics) {
-    return diagnostics.reduce((highest, diagnostic) => {
-        if (getConfidenceLevel(diagnostic?.confidence) > getConfidenceLevel(highest)) {
-            return diagnostic.confidence;
-        }
-
-        return highest;
-    }, "low");
-}
-
-function boostConfidence(confidence, count) {
-    const level = getConfidenceLevel(confidence);
-    if (count < 2) {
-        return confidence;
-    }
-
-    return CONFIDENCE_LEVELS[Math.min(level + 1, CONFIDENCE_LEVELS.length - 1)];
-}
-
 function cloneValue(value) {
     if (Array.isArray(value)) {
         return value.map((item) => cloneValue(item));
@@ -42,56 +23,102 @@ function cloneValue(value) {
     return value;
 }
 
-function mergeConservativeValues(currentValue, nextValue) {
-    if (typeof currentValue === "number" && typeof nextValue === "number") {
-        return Math.min(currentValue, nextValue);
+function boostConfidence(confidence, count) {
+    const level = getConfidenceLevel(confidence);
+    if (count < 2) {
+        return confidence;
     }
 
-    if (Array.isArray(currentValue) && Array.isArray(nextValue)) {
-        return currentValue.length >= nextValue.length ? cloneValue(currentValue) : cloneValue(nextValue);
-    }
-
-    if (currentValue && typeof currentValue === "object" && nextValue && typeof nextValue === "object") {
-        const merged = { ...cloneValue(currentValue) };
-        Object.entries(nextValue).forEach(([key, value]) => {
-            if (key in merged) {
-                merged[key] = mergeConservativeValues(merged[key], value);
-            } else {
-                merged[key] = cloneValue(value);
-            }
-        });
-        return merged;
-    }
-
-    if (currentValue === undefined) {
-        return cloneValue(nextValue);
-    }
-
-    return cloneValue(currentValue);
+    return CONFIDENCE_LEVELS[Math.min(level + 1, CONFIDENCE_LEVELS.length - 1)];
 }
 
-function groupDiagnosticsByType(results) {
-    return results.reduce((groups, result) => {
+function buildRatesMismatchFingerprint(diagnostic) {
+    const evidence = diagnostic?.evidence || {};
+    const axes = Array.isArray(evidence.exceededAxes)
+        ? evidence.exceededAxes.map((entry) => entry.axis).sort().join(",")
+        : "";
+
+    return [
+        diagnostic?.type || "",
+        evidence.ratesType ?? "",
+        evidence.craftType || "",
+        evidence.flightStyle || "",
+        evidence.runtimeUsage || "",
+        axes,
+    ].join("|");
+}
+
+function getDiagnosticFingerprint(diagnostic) {
+    if (!diagnostic?.type) {
+        return "";
+    }
+
+    if (diagnostic.type === "rates_mismatch") {
+        return buildRatesMismatchFingerprint(diagnostic);
+    }
+
+    return diagnostic.type;
+}
+
+function getRecommendationKey(recommendation) {
+    return [recommendation?.type || "", recommendation?.group || "", recommendation?.actionability || ""].join("|");
+}
+
+function pickPreferredText(currentValue, nextValue) {
+    if (!currentValue) {
+        return nextValue;
+    }
+
+    if (!nextValue) {
+        return currentValue;
+    }
+
+    return nextValue.length > currentValue.length ? nextValue : currentValue;
+}
+
+function mergeConfigSnapshots(currentSnapshot = {}, nextSnapshot = {}) {
+    const merged = { ...cloneValue(currentSnapshot) };
+
+    Object.entries(nextSnapshot).forEach(([key, value]) => {
+        const currentValue = merged[key];
+        if (typeof currentValue === "number" && typeof value === "number") {
+            merged[key] = Math.min(currentValue, value);
+            return;
+        }
+
+        if (currentValue === undefined) {
+            merged[key] = cloneValue(value);
+        }
+    });
+
+    return merged;
+}
+
+function groupDiagnostics(results) {
+    const groups = new Map();
+
+    results.forEach((result) => {
         (result?.diagnostics || []).forEach((diagnostic) => {
-            if (!diagnostic?.type) {
+            const fingerprint = getDiagnosticFingerprint(diagnostic);
+            if (!fingerprint) {
                 return;
             }
 
-            if (!groups[diagnostic.type]) {
-                groups[diagnostic.type] = [];
+            if (!groups.has(fingerprint)) {
+                groups.set(fingerprint, []);
             }
 
-            groups[diagnostic.type].push(diagnostic);
+            groups.get(fingerprint).push(diagnostic);
         });
+    });
 
-        return groups;
-    }, {});
+    return groups;
 }
 
 function buildConsensus(groups) {
-    return Object.entries(groups)
-        .filter(([, diagnostics]) => diagnostics.length > 1)
-        .map(([type, diagnostics]) => {
+    return Array.from(groups.values())
+        .filter((diagnostics) => diagnostics.length > 1)
+        .map((diagnostics) => {
             const representative = cloneValue(
                 diagnostics.reduce((selected, current) => {
                     if (!selected) {
@@ -104,33 +131,65 @@ function buildConsensus(groups) {
                 }, null),
             );
 
-            representative.type = type;
-            representative.confidence = boostConfidence(getHighestConfidence(diagnostics), diagnostics.length);
+            representative.confidence = boostConfidence(
+                diagnostics.reduce((highest, diagnostic) => {
+                    return getConfidenceLevel(diagnostic?.confidence) > getConfidenceLevel(highest)
+                        ? diagnostic.confidence
+                        : highest;
+                }, "low"),
+                diagnostics.length,
+            );
             representative.sources = diagnostics.length;
             return representative;
         });
 }
 
-function buildConflicts(groups) {
-    return Object.entries(groups)
-        .filter(([, diagnostics]) => diagnostics.length === 1)
-        .map(([type, diagnostics]) => {
+function buildConflictingDiagnostics(groups) {
+    return Array.from(groups.values())
+        .filter((diagnostics) => diagnostics.length === 1)
+        .map((diagnostics) => {
             const representative = cloneValue(diagnostics[0]);
-            representative.type = type;
             representative.sources = 1;
+            representative.classification = "singleton";
+            representative.conflict = false;
             return representative;
         });
 }
 
-function buildAggregateRecommendations(results) {
-    return results.reduce((aggregate, result) => {
-        const recommendations = result?.recommendations;
-        if (!recommendations || typeof recommendations !== "object" || Array.isArray(recommendations)) {
-            return aggregate;
-        }
+function mergeRecommendation(existing, incoming) {
+    const merged = cloneValue(existing);
 
-        return mergeConservativeValues(aggregate, recommendations);
-    }, {});
+    merged.type = existing.type || incoming.type;
+    merged.group = existing.group || incoming.group;
+    merged.priority = existing.priority || incoming.priority;
+    merged.actionability = existing.actionability || incoming.actionability;
+    merged.explanation = pickPreferredText(existing.explanation, incoming.explanation);
+    merged.configSnapshot = mergeConfigSnapshots(existing.configSnapshot, incoming.configSnapshot);
+    merged.sources = (existing.sources || 1) + 1;
+
+    return merged;
+}
+
+function buildAggregateRecommendations(results) {
+    const grouped = new Map();
+
+    results.forEach((result) => {
+        (result?.recommendations || []).forEach((recommendation) => {
+            const key = getRecommendationKey(recommendation);
+            if (!key) {
+                return;
+            }
+
+            if (!grouped.has(key)) {
+                grouped.set(key, { ...cloneValue(recommendation), sources: 1 });
+                return;
+            }
+
+            grouped.set(key, mergeRecommendation(grouped.get(key), recommendation));
+        });
+    });
+
+    return Array.from(grouped.values());
 }
 
 function summarizeAggregateQuality(results) {
@@ -156,12 +215,12 @@ function summarizeAggregateQuality(results) {
 
 export function aggregateBblAnalyses(results = []) {
     const usable = results.filter((result) => result?.quality?.status !== QUALITY_STATUS.UNUSABLE);
-    const groups = groupDiagnosticsByType(usable);
+    const groups = groupDiagnostics(usable);
 
     return {
         selectedLogIndexes: usable.map((result) => result.logIndex),
         consensusDiagnostics: buildConsensus(groups),
-        conflictingDiagnostics: buildConflicts(groups),
+        conflictingDiagnostics: buildConflictingDiagnostics(groups),
         aggregateRecommendations: buildAggregateRecommendations(usable),
         aggregateQuality: summarizeAggregateQuality(usable),
     };
