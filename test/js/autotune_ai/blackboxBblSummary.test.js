@@ -60,11 +60,26 @@ function encodeTag2_3S32(values) {
 }
 
 function encodeTag2_3SVariable(values) {
-    return encodeTag2_3S32(values);
+    const [first, second, third] = values;
+    const leadByte = 0x40 | ((first & 0x1f) << 1) | ((second >> 4) & 0x01);
+    const leadByte2 = ((second & 0x0f) << 4) | (third & 0x0f);
+    return [leadByte, leadByte2];
 }
 
 function encodeTag8_4S16(values) {
-    return [0xaa, ...values.map((value) => value & 0xff)];
+    const [first, second, third, fourth] = values;
+    const selector = 0b11_10_01_00;
+    const nibbleByte = ((second & 0x0f) << 4) | ((third >> 4) & 0x0f);
+    const tailByte = ((third & 0x0f) << 4) | ((fourth >> 12) & 0x0f);
+    return [
+        selector,
+        (first >> 8) & 0xff,
+        first & 0xff,
+        nibbleByte,
+        third & 0xff,
+        (fourth >> 4) & 0xff,
+        tailByte,
+    ];
 }
 
 describe("autotune AI generic BBL summary", () => {
@@ -200,6 +215,24 @@ describe("autotune AI generic BBL summary", () => {
         expect(summary.fieldStats.setpoint["2"]).toMatchObject({ count: 1, min: -40, max: -40 });
     });
 
+    it("uses TAG8_8SVB group width instead of scalar decoding", () => {
+        const header = [
+            "Product:Blackbox flight data recorder by Nicholas Sherlock",
+            "Data version:2",
+            "Field I name:time,gyroADC[0],gyroADC[1]",
+            "Field I predictor:0,0,0",
+            "Field I encoding:1,6,6",
+        ];
+        const data = makeBblBytesWithFrames(header, [makeIFrame([encodeUnsigned(1000), makeTag8_8Svb([0, -9])])]);
+
+        const summary = buildBblSummary({ fileName: "tag8-width.bbl", data });
+
+        expect(summary.samples.decodedMainFrames).toBe(1);
+        expect(summary.samples.corruptFrames).toBe(0);
+        expect(summary.fieldStats.gyroADC["0"]).toMatchObject({ count: 1, min: 0, max: 0 });
+        expect(summary.fieldStats.gyroADC["1"]).toMatchObject({ count: 1, min: -9, max: -9 });
+    });
+
     it("tracks unsupported encoded frames separately from corrupt frames", () => {
         const header = [
             "Product:Blackbox flight data recorder by Nicholas Sherlock",
@@ -215,22 +248,36 @@ describe("autotune AI generic BBL summary", () => {
         expect(summary.samples.decodedMainFrames).toBe(0);
         expect(summary.samples.corruptFrames).toBe(0);
         expect(summary.samples.unsupportedEncodedFrames).toBe(1);
+        expect(summary.samples).toEqual({
+            decodedMainFrames: 0,
+            corruptFrames: 0,
+            unsupportedEncodedFrames: 1,
+            skippedEventFrames: 0,
+            firstTimeUs: null,
+            lastTimeUs: null,
+            durationUs: null,
+            truncated: false,
+            maxDecodedFrames: 20000,
+        });
     });
 
     it("decodes TAG2_3S32, TAG8_4S16, and TAG2_3SVARIABLE grouped fields in ordinary BBL logs", () => {
         const header = [
             "Product:Blackbox flight data recorder by Nicholas Sherlock",
             "Data version:2",
-            "Field I name:time,gyroADC[0],gyroADC[1],gyroADC[2],setpoint[0],setpoint[1],setpoint[2],motor[0],debug[0],debug[1],debug[2]",
-            "Field I predictor:0,0,0,0,0,0,0,0,0,0,0",
-            "Field I encoding:1,7,7,7,8,8,8,8,10,10,10",
+            "Field I name:time,gyroADC[0],gyroADC[1],gyroADC[2],setpoint[0],setpoint[1],setpoint[2],motor[0],debug[0],debug[1],debug[2],motor[1],motor[2],motor[3]",
+            "Field I predictor:0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "Field I encoding:1,7,7,7,8,8,8,8,10,10,10,0,0,0",
         ];
         const data = makeBblBytesWithFrames(header, [
             makeIFrame([
                 encodeUnsigned(1000),
                 encodeTag2_3S32([10, -20, 30]),
-                encodeTag8_4S16([40, -50, 60, 70]),
+                encodeTag8_4S16([300, 7, -65, -300]),
                 encodeTag2_3SVariable([5, -6, 7]),
+                encodeSigned(0),
+                encodeSigned(0),
+                encodeSigned(0),
             ]),
         ]);
 
@@ -242,10 +289,10 @@ describe("autotune AI generic BBL summary", () => {
         expect(summary.fieldStats.gyroADC["0"]).toMatchObject({ count: 1, min: 10, max: 10 });
         expect(summary.fieldStats.gyroADC["1"]).toMatchObject({ count: 1, min: -20, max: -20 });
         expect(summary.fieldStats.gyroADC["2"]).toMatchObject({ count: 1, min: 30, max: 30 });
-        expect(summary.fieldStats.setpoint["0"]).toMatchObject({ count: 1, min: 40, max: 40 });
-        expect(summary.fieldStats.setpoint["1"]).toMatchObject({ count: 1, min: -50, max: -50 });
-        expect(summary.fieldStats.setpoint["2"]).toMatchObject({ count: 1, min: 60, max: 60 });
-        expect(summary.fieldStats.motor["0"]).toMatchObject({ count: 1, min: 70, max: 70 });
+        expect(summary.fieldStats.setpoint["0"]).toMatchObject({ count: 1, min: 300, max: 300 });
+        expect(summary.fieldStats.setpoint["1"]).toMatchObject({ count: 1, min: 7, max: 7 });
+        expect(summary.fieldStats.setpoint["2"]).toMatchObject({ count: 1, min: -65, max: -65 });
+        expect(summary.fieldStats.motor["0"]).toMatchObject({ count: 1, min: -300, max: -300 });
         expect(summary.fieldStats.debug["0"]).toMatchObject({ count: 1, min: 5, max: 5 });
         expect(summary.fieldStats.debug["1"]).toMatchObject({ count: 1, min: -6, max: -6 });
         expect(summary.fieldStats.debug["2"]).toMatchObject({ count: 1, min: 7, max: 7 });

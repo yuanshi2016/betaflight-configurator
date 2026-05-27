@@ -449,7 +449,7 @@ function makeUnsupportedEncodingError(encoding) {
     return error;
 }
 
-function readFieldValue(data, state, encoding, dataVersion = 2) {
+function readFieldValue(data, state, encoding, dataVersion = 2, groupCount = 1) {
     switch (encoding) {
         case ENCODING_SIGNED_VB:
             return readSignedVB(data, state);
@@ -462,7 +462,7 @@ function readFieldValue(data, state, encoding, dataVersion = 2) {
         case ENCODING_TAG8_4S16:
             return dataVersion >= 2 ? readTag8_4S16_v2(data, state) : readTag8_4S16_v1(data, state);
         case ENCODING_TAG8_8SVB:
-            return readTag8_8Svb(data, state, 1)[0];
+            return readTag8_8Svb(data, state, Math.min(groupCount, 8));
         case ENCODING_TAG2_3SVARIABLE:
             return readTag2_3SVariable(data, state);
         case ENCODING_NULL:
@@ -534,7 +534,7 @@ function decodeFrame(data, state, frameDef, previous, previous2, sysConfig, moto
                           consecutiveEncodingRun(frameDef, index, encoding),
                           encoding === ENCODING_TAG8_4S16 ? 4 : 3,
                       );
-            const rawGroup = readFieldValue(data, state, encoding, sysConfig.dataVersion);
+            const rawGroup = readFieldValue(data, state, encoding, sysConfig.dataVersion, groupSize);
             const rawValues = Array.isArray(rawGroup) ? rawGroup : [rawGroup];
             for (let groupIndex = 0; groupIndex < groupSize; groupIndex += 1) {
                 const fieldIndex = index + groupIndex;
@@ -554,7 +554,7 @@ function decodeFrame(data, state, frameDef, previous, previous2, sysConfig, moto
             continue;
         }
 
-        const raw = readFieldValue(data, state, encoding, sysConfig.dataVersion);
+        const raw = readFieldValue(data, state, encoding, sysConfig.dataVersion, 1);
         current[index] = applyPrediction(
             index,
             predictor,
