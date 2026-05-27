@@ -279,6 +279,10 @@ function loadCraftContextProfiles() {
     return normalizeCraftContextProfiles(getConfig(CRAFT_CONTEXT_PROFILES_KEY)?.[CRAFT_CONTEXT_PROFILES_KEY]);
 }
 
+function sameValue(left, right) {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export const useAutotuneAiStore = defineStore("autotuneAi", () => {
     const providerSettings = reactive(loadStoredValue(PROVIDER_SETTINGS_KEY, defaultProviderSettings(), getConfig));
     const craftContext = reactive(loadCraftContext());
@@ -355,6 +359,12 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         bblFileData.value = null;
     }
 
+    function invalidateAiOutput() {
+        sessionState.aiResponse = null;
+        sessionState.lastPayload = null;
+        clearConversation();
+    }
+
     function initialize() {
         refreshLocalBblAnalysis();
         initialized.value = true;
@@ -404,12 +414,25 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
 
     function parseCliInput() {
         const cliText = String(sessionState.cliText || "").trim();
-        sessionState.parsedCliSummary = cliText ? parseCliConfig(cliText) : null;
-        sessionState.sourceFileName = cliText ? "CLI text" : "";
-        sessionState.sourceType = cliText ? "cli" : "";
-        sessionState.sourceSummary =
-            sessionState.parsedCliSummary || sessionState.csvSummary || sessionState.bblSummary || null;
-        return sessionState.parsedCliSummary;
+        const nextParsedCliSummary = cliText ? parseCliConfig(cliText) : null;
+        const nextSourceFileName = cliText ? "CLI text" : "";
+        const nextSourceType = cliText ? "cli" : "";
+        const nextSourceSummary = nextParsedCliSummary || sessionState.csvSummary || sessionState.bblSummary || null;
+        const sourceChanged =
+            !sameValue(sessionState.parsedCliSummary, nextParsedCliSummary) ||
+            sessionState.sourceFileName !== nextSourceFileName ||
+            sessionState.sourceType !== nextSourceType ||
+            !sameValue(sessionState.sourceSummary, nextSourceSummary);
+
+        sessionState.parsedCliSummary = nextParsedCliSummary;
+        sessionState.sourceFileName = nextSourceFileName;
+        sessionState.sourceType = nextSourceType;
+        sessionState.sourceSummary = nextSourceSummary;
+
+        if (sourceChanged) {
+            invalidateAiOutput();
+        }
+        return nextParsedCliSummary;
     }
 
     function buildLocalAnalysisStaticConfig() {
@@ -504,6 +527,7 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
                 });
             }
 
+            invalidateAiOutput();
             sessionState.sourceFileName = imported.fileName;
             sessionState.sourceType = imported.type;
             if (imported.type === "cli") {
@@ -542,6 +566,8 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
             return null;
         }
 
+        const previousSelectedLogIndex = sessionState.bblSummary.selectedLogIndex;
+        const previousSelectedIndexes = [...sessionState.selectedBblLogIndexes];
         sessionState.bblSummary = buildBblSummary({
             fileName: sessionState.bblSummary.fileName,
             data: bblFileData.value,
@@ -552,6 +578,12 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         sessionState.sourceSummary =
             sessionState.parsedCliSummary || sessionState.csvSummary || sessionState.bblSummary || null;
         sessionState.selectedBblLogIndexes = [sessionState.bblSummary.selectedLogIndex];
+        if (
+            previousSelectedLogIndex !== sessionState.bblSummary.selectedLogIndex ||
+            !sameValue(previousSelectedIndexes, sessionState.selectedBblLogIndexes)
+        ) {
+            invalidateAiOutput();
+        }
         refreshLocalBblAnalysis();
         return sessionState.bblSummary;
     }
@@ -560,7 +592,11 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         const validIndexes = [...new Set((Array.isArray(indexes) ? indexes : []).filter(Number.isInteger))].sort(
             (left, right) => left - right,
         );
+        const changed = !sameValue(sessionState.selectedBblLogIndexes, validIndexes);
         sessionState.selectedBblLogIndexes = validIndexes;
+        if (changed) {
+            invalidateAiOutput();
+        }
         refreshLocalBblAnalysis();
         return sessionState.selectedBblLogIndexes;
     }
@@ -577,7 +613,12 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
             selected.add(index);
         }
 
-        sessionState.selectedBblLogIndexes = [...selected].sort((left, right) => left - right);
+        const nextSelectedIndexes = [...selected].sort((left, right) => left - right);
+        const changed = !sameValue(sessionState.selectedBblLogIndexes, nextSelectedIndexes);
+        sessionState.selectedBblLogIndexes = nextSelectedIndexes;
+        if (changed) {
+            invalidateAiOutput();
+        }
         refreshLocalBblAnalysis();
         return sessionState.selectedBblLogIndexes;
     }

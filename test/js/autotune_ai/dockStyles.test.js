@@ -114,4 +114,14 @@ describe("autotune AI dock styles", () => {
         expect(component).toContain("diagnostic?.sources");
         expect(component).toContain("recommendation?.priority");
     });
+
+    it("only requires the FC blocks needed by the recommendation values being written", () => {
+        const component = readFileSync("src/components/tabs/autotune/AiAdvisor.vue", "utf8");
+
+        expect(component).toContain("const needsSliders = Object.keys(values).some((key) => SLIDER_KEYS.has(key))");
+        expect(component).toContain("const needsRcTuning = Object.keys(values).some((key) => RC_TUNING_KEYS.has(key))");
+        expect(component).toContain("if (needsSliders && !FC.TUNING_SLIDERS)");
+        expect(component).toContain("if (needsRcTuning && !FC.RC_TUNING)");
+        expect(component).not.toContain("if (!FC.TUNING_SLIDERS || !FC.RC_TUNING)");
+    });
 });

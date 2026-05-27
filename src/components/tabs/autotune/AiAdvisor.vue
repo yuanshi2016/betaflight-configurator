@@ -801,21 +801,22 @@ async function writeGroup(groupKey, { skipEeprom = false } = {}) {
     writeError[groupKey] = "";
 
     try {
-        if (!FC.TUNING_SLIDERS || !FC.RC_TUNING) {
-            throw new Error("FC data not loaded.");
-        }
-
         const values = group.values;
-        let needsSliders = false;
-        let needsRcTuning = false;
+        const needsSliders = Object.keys(values).some((key) => SLIDER_KEYS.has(key));
+        const needsRcTuning = Object.keys(values).some((key) => RC_TUNING_KEYS.has(key));
+
+        if (needsSliders && !FC.TUNING_SLIDERS) {
+            throw new Error("FC tuning sliders not loaded.");
+        }
+        if (needsRcTuning && !FC.RC_TUNING) {
+            throw new Error("FC RC tuning not loaded.");
+        }
 
         for (const [key, value] of Object.entries(values)) {
             if (SLIDER_KEYS.has(key)) {
                 FC.TUNING_SLIDERS[key] = value;
-                needsSliders = true;
             } else if (RC_TUNING_KEYS.has(key)) {
                 FC.RC_TUNING[key] = value;
-                needsRcTuning = true;
             }
         }
 
@@ -960,6 +961,7 @@ function formatAggregateQualityReason(reason) {
     return t(
         {
             all_selected_logs_usable: "autotuneAiAggregateReasonAllSelectedLogsUsable",
+            includes_unusable_logs: "autotuneAiAggregateReasonIncludesUnusableLogs",
             includes_degraded_logs: "autotuneAiAggregateReasonIncludesDegradedLogs",
             no_usable_logs: "autotuneAiAggregateReasonNoUsableLogs",
         }[reason] || "autotuneAiAggregateReasonFallback",

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
+import { nextTick } from "vue";
 
 const mockBuildBblSummary = vi.fn();
 const mockAnalyzeBblLog = vi.fn();
@@ -13,6 +14,7 @@ const mockDetectAutotuneInputSource = vi.fn();
 const mockExplainTuningAnalysis = vi.fn();
 const mockParseAiResponse = vi.fn();
 const mockBuildAiPayload = vi.fn();
+const mockParseCliConfig = vi.fn();
 const mockFc = {
     RC_TUNING: null,
 };
@@ -32,6 +34,10 @@ vi.mock("../../../src/js/autotune-ai/blackboxBblAggregate", () => ({
 vi.mock("../../../src/js/autotune-ai/inputSourceDetector", () => ({
     buildInputSourceSummary: mockBuildInputSourceSummary,
     detectAutotuneInputSource: mockDetectAutotuneInputSource,
+}));
+
+vi.mock("../../../src/js/autotune-ai/cliConfigParser", () => ({
+    parseCliConfig: mockParseCliConfig,
 }));
 
 vi.mock("../../../src/js/autotune-ai/providerAdapters", () => ({
@@ -116,6 +122,7 @@ describe("autotune AI store defaults", () => {
         mockDetectAutotuneInputSource.mockReturnValue("cli");
         mockBuildAiPayload.mockReturnValue({});
         mockFc.RC_TUNING = null;
+        mockParseCliConfig.mockReturnValue(null);
     });
 
     it("defaults the DeepSeek presets to V4 Pro", () => {
@@ -351,5 +358,68 @@ describe("autotune AI store defaults", () => {
         const providerHistory = mockExplainTuningAnalysis.mock.calls[0][2];
         expect(providerHistory.length).toBeLessThanOrEqual(store.sessionState.conversationHistory.length);
         expect(providerHistory[0].content).not.toBe(store.sessionState.conversationHistory[0].content);
+    });
+
+    it("clears stale AI output when importing a new input file", async () => {
+        const store = useAutotuneAiStore();
+        store.sessionState.aiResponse = { summary: "stale" };
+        store.sessionState.lastPayload = { source: "old" };
+        store.sessionState.conversationHistory = [{ role: "assistant", content: "old answer" }];
+        store.sessionState.conversationTrimmed = true;
+        store.sessionState.followUpInput = "old question";
+        store.sessionState.followUpState = "error";
+
+        await store.importInputFile(createBblFile([9, 9, 9]));
+
+        expect(store.sessionState.aiResponse).toBeNull();
+        expect(store.sessionState.lastPayload).toBeNull();
+        expect(store.sessionState.conversationHistory).toEqual([]);
+        expect(store.sessionState.conversationTrimmed).toBe(false);
+        expect(store.sessionState.followUpInput).toBe("");
+        expect(store.sessionState.followUpState).toBe("idle");
+    });
+
+    it("clears stale AI output when the selected BBL logs change", async () => {
+        const store = useAutotuneAiStore();
+        mockDetectAutotuneInputSource.mockReturnValue("bbl");
+        await store.importInputFile(createBblFile());
+
+        store.sessionState.aiResponse = { summary: "stale" };
+        store.sessionState.lastPayload = { source: "old" };
+        store.sessionState.conversationHistory = [{ role: "assistant", content: "old answer" }];
+        store.sessionState.conversationTrimmed = true;
+        store.sessionState.followUpInput = "old question";
+        store.sessionState.followUpState = "error";
+
+        store.setSelectedBblLogIndexes([0, 1]);
+
+        expect(store.sessionState.aiResponse).toBeNull();
+        expect(store.sessionState.lastPayload).toBeNull();
+        expect(store.sessionState.conversationHistory).toEqual([]);
+        expect(store.sessionState.conversationTrimmed).toBe(false);
+        expect(store.sessionState.followUpInput).toBe("");
+        expect(store.sessionState.followUpState).toBe("idle");
+    });
+
+    it("clears stale AI output when parsed CLI input changes the source summary", async () => {
+        const store = useAutotuneAiStore();
+        store.sessionState.aiResponse = { summary: "stale" };
+        store.sessionState.lastPayload = { source: "old" };
+        store.sessionState.conversationHistory = [{ role: "assistant", content: "old answer" }];
+        store.sessionState.conversationTrimmed = true;
+        store.sessionState.followUpInput = "old question";
+        store.sessionState.followUpState = "error";
+
+        mockParseCliConfig.mockReturnValue({ rates: { roll_rate: 700 } });
+        store.sessionState.cliText = "set roll_rate = 700";
+        store.parseCliInput();
+        await nextTick();
+
+        expect(store.sessionState.aiResponse).toBeNull();
+        expect(store.sessionState.lastPayload).toBeNull();
+        expect(store.sessionState.conversationHistory).toEqual([]);
+        expect(store.sessionState.conversationTrimmed).toBe(false);
+        expect(store.sessionState.followUpInput).toBe("");
+        expect(store.sessionState.followUpState).toBe("idle");
     });
 });

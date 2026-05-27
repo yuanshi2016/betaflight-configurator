@@ -172,7 +172,7 @@ describe("autotune AI multi-log BBL aggregation", () => {
         expect(aggregate.conflictingDiagnostics).toHaveLength(2);
     });
 
-    it("excludes unusable logs from the selected set and aggregate quality", () => {
+    it("preserves selected logs separately from the usable subset", () => {
         const aggregate = aggregateBblAnalyses([
             {
                 logIndex: 0,
@@ -196,8 +196,10 @@ describe("autotune AI multi-log BBL aggregation", () => {
             },
         ]);
 
-        expect(aggregate.selectedLogIndexes).toEqual([1]);
+        expect(aggregate.selectedLogIndexes).toEqual([0, 1]);
+        expect(aggregate.usableLogIndexes).toEqual([1]);
         expect(aggregate.aggregateQuality.status).toBe("degraded");
+        expect(aggregate.aggregateQuality.reason).toBe("includes_unusable_logs");
         expect(aggregate.consensusDiagnostics).toEqual([]);
         expect(aggregate.aggregateRecommendations).toEqual([]);
     });

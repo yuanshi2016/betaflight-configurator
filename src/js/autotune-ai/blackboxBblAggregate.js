@@ -212,15 +212,29 @@ function buildAggregateRecommendations(results) {
     return Array.from(grouped.values());
 }
 
-function summarizeAggregateQuality(results) {
-    if (!results.length) {
+function summarizeAggregateQuality(selectedResults, usableResults) {
+    if (!selectedResults.length) {
         return {
             status: QUALITY_STATUS.UNUSABLE,
             reason: "no_usable_logs",
         };
     }
 
-    if (results.some((result) => result?.quality?.status === QUALITY_STATUS.DEGRADED)) {
+    if (!usableResults.length) {
+        return {
+            status: QUALITY_STATUS.UNUSABLE,
+            reason: "includes_unusable_logs",
+        };
+    }
+
+    if (usableResults.length !== selectedResults.length) {
+        return {
+            status: QUALITY_STATUS.DEGRADED,
+            reason: "includes_unusable_logs",
+        };
+    }
+
+    if (usableResults.some((result) => result?.quality?.status === QUALITY_STATUS.DEGRADED)) {
         return {
             status: QUALITY_STATUS.DEGRADED,
             reason: "includes_degraded_logs",
@@ -238,10 +252,11 @@ export function aggregateBblAnalyses(results = []) {
     const groups = groupDiagnostics(usable);
 
     return {
-        selectedLogIndexes: usable.map((result) => result.logIndex),
+        selectedLogIndexes: results.map((result) => result.logIndex),
+        usableLogIndexes: usable.map((result) => result.logIndex),
         consensusDiagnostics: buildConsensus(groups),
         conflictingDiagnostics: buildConflictingDiagnostics(groups),
         aggregateRecommendations: buildAggregateRecommendations(usable),
-        aggregateQuality: summarizeAggregateQuality(usable),
+        aggregateQuality: summarizeAggregateQuality(results, usable),
     };
 }
