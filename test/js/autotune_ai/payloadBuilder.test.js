@@ -86,7 +86,7 @@ describe("autotune AI payload builder", () => {
                     {
                         type: "frame_resonance",
                         conflict: "partial_disagreement",
-                        sources: ["log-1", "log-2"],
+                        sources: 2,
                         reason: "insufficient_data",
                         explanation: repeatText("conflict-", 400),
                     },
@@ -130,7 +130,7 @@ describe("autotune AI payload builder", () => {
                 {
                     type: "frame_resonance",
                     conflict: "partial_disagreement",
-                    sources: ["log-1", "log-2"],
+                    sources: 2,
                     explanation: expect.any(String),
                 },
             ],
@@ -171,6 +171,7 @@ describe("autotune AI payload builder", () => {
                         metric: `metric-${index}`,
                         axis: "roll",
                         note: repeatText("note-", 200),
+                        peaks: Array.from({ length: 8 }, (_, peakIndex) => peakIndex),
                         rawBytes: new Uint8Array([1, 2]),
                     },
                     extraField: "ignored",
@@ -178,7 +179,7 @@ describe("autotune AI payload builder", () => {
                 conflictingDiagnostics: Array.from({ length: 7 }, (_, index) => ({
                     type: `conflict-${index}`,
                     conflict: "disagreement",
-                    sources: ["log-1", "log-2", "log-3", "log-4", "log-5"],
+                    sources: index + 2,
                     explanation: repeatText(`conflict-${index}-`, 400),
                     extraField: "ignored",
                 })),
@@ -191,6 +192,10 @@ describe("autotune AI payload builder", () => {
                     configSnapshot: {
                         profile: index,
                         value: repeatText("snapshot-", 200),
+                        recentAdjustments: Array.from({ length: 9 }, (_, adjustmentIndex) => ({
+                            axis: "roll",
+                            value: adjustmentIndex,
+                        })),
                         rawRows: [[1, 2, 3]],
                     },
                     extraField: "ignored",
@@ -209,9 +214,11 @@ describe("autotune AI payload builder", () => {
         expect(payload.localAnalysis.consensusDiagnostics[0]).not.toHaveProperty("extraField");
         expect(payload.localAnalysis.conflictingDiagnostics[0]).not.toHaveProperty("extraField");
         expect(payload.localAnalysis.aggregateRecommendations[0]).not.toHaveProperty("extraField");
-        expect(payload.localAnalysis.conflictingDiagnostics[0].sources).toHaveLength(4);
+        expect(payload.localAnalysis.conflictingDiagnostics[0].sources).toBe(2);
         expect(payload.localAnalysis.consensusDiagnostics[0].explanation.length).toBeLessThanOrEqual(240);
         expect(payload.localAnalysis.aggregateRecommendations[0].explanation.length).toBeLessThanOrEqual(240);
+        expect(payload.localAnalysis.consensusDiagnostics[0].evidence.peaks).toHaveLength(4);
+        expect(payload.localAnalysis.aggregateRecommendations[0].configSnapshot.recentAdjustments).toHaveLength(4);
     });
 
     it("enforces the payload size limit by compacting local analysis before returning", () => {

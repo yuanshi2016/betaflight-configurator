@@ -9,6 +9,7 @@ const MAX_SOURCE_ITEMS = 4;
 const MAX_EVIDENCE_KEYS = 6;
 const MAX_CONFIG_SNAPSHOT_KEYS = 8;
 const MAX_NESTED_TEXT_LENGTH = 120;
+const MAX_NESTED_ARRAY_ITEMS = 4;
 
 const FIRMWARE_KEYS = [
     "apiVersion",
@@ -129,7 +130,10 @@ function compactNestedValue(value) {
     }
 
     if (Array.isArray(value)) {
-        const items = value.map((item) => compactNestedValue(item)).filter((item) => item !== undefined);
+        const items = value
+            .slice(0, MAX_NESTED_ARRAY_ITEMS)
+            .map((item) => compactNestedValue(item))
+            .filter((item) => item !== undefined);
         return items.length ? items : undefined;
     }
 
@@ -175,7 +179,9 @@ function summarizeDiagnosticItem(item, { includeConflict = false } = {}) {
 
     if (includeConflict) {
         summary.conflict = item.conflict;
-        summary.sources = Array.isArray(item.sources) ? item.sources.slice(0, MAX_SOURCE_ITEMS).map((value) => String(value)) : undefined;
+        summary.sources = Array.isArray(item.sources)
+            ? item.sources.slice(0, MAX_SOURCE_ITEMS).map((value) => String(value))
+            : item.sources;
     }
 
     return Object.fromEntries(Object.entries(summary).filter(([, value]) => value !== undefined));
@@ -336,12 +342,6 @@ function enforcePayloadLimit(payload) {
         if (size <= MAX_PAYLOAD_BYTES) {
             return candidate;
         }
-    }
-
-    const finalSize = JSON.stringify(smallest).length;
-
-    if (finalSize <= MAX_PAYLOAD_BYTES) {
-        return smallest;
     }
 
     return smallest;
