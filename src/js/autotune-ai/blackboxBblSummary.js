@@ -531,9 +531,9 @@ function decodeFrame(data, state, frameDef, previous, previous2, sysConfig, moto
                 encoding === ENCODING_TAG8_8SVB
                     ? Math.min(consecutiveEncodingRun(frameDef, index, ENCODING_TAG8_8SVB), 8)
                     : Math.min(
-                          consecutiveEncodingRun(frameDef, index, encoding),
-                          encoding === ENCODING_TAG8_4S16 ? 4 : 3,
-                      );
+                        consecutiveEncodingRun(frameDef, index, encoding),
+                        encoding === ENCODING_TAG8_4S16 ? 4 : 3,
+                    );
             const rawGroup = readFieldValue(data, state, encoding, sysConfig.dataVersion, groupSize);
             const rawValues = Array.isArray(rawGroup) ? rawGroup : [rawGroup];
             for (let groupIndex = 0; groupIndex < groupSize; groupIndex += 1) {
