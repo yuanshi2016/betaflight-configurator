@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
 import {
+    defaultSessionState,
     estimateConversationTokens,
     MAX_HISTORY_TOKENS,
     PROVIDER_PRESETS,
     trimConversationHistoryToTokenBudget,
+    useAutotuneAiStore,
 } from "../../../src/stores/autotuneAi";
 
 describe("autotune AI store defaults", () => {
@@ -44,6 +47,36 @@ describe("autotune AI store defaults", () => {
         expect(storeSource).toContain("function toggleBblLogSelection(index)");
         expect(storeSource).toContain("refreshLocalBblAnalysis();");
         expect(storeSource).toContain("localBblAnalysis: sessionState.localBblAnalysis");
+    });
+
+    it("defaults local bbl analysis state to empty values", () => {
+        expect(defaultSessionState()).toMatchObject({
+            selectedBblLogIndexes: [],
+            localBblAnalysesByLog: {},
+            localBblAnalysis: null,
+        });
+    });
+
+    it("clears stale persisted local bbl analysis when no valid bbl is loaded", () => {
+        sessionStorage.setItem(
+            "AutotuneAiPanelState",
+            JSON.stringify({
+                AutotuneAiPanelState: {
+                    bblSummary: null,
+                    selectedBblLogIndexes: [1, 2],
+                    localBblAnalysesByLog: { 1: { logIndex: 1 } },
+                    localBblAnalysis: { selectedLogIndexes: [1, 2] },
+                },
+            }),
+        );
+
+        setActivePinia(createPinia());
+        const store = useAutotuneAiStore();
+
+        expect(store.sessionState.bblSummary).toBeNull();
+        expect(store.sessionState.selectedBblLogIndexes).toEqual([]);
+        expect(store.sessionState.localBblAnalysesByLog).toEqual({});
+        expect(store.sessionState.localBblAnalysis).toBeNull();
     });
 
     it("trims conversation history by estimated token budget while keeping context anchors", () => {

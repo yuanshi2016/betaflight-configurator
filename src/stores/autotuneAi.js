@@ -201,7 +201,7 @@ function defaultCraftContext() {
     };
 }
 
-function defaultSessionState() {
+export function defaultSessionState() {
     return {
         cliText: "",
         parsedCliSummary: null,
@@ -345,7 +345,17 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         { deep: true },
     );
 
+    function clearBblDerivedState() {
+        sessionState.bblSummary = null;
+        sessionState.bblFileData = null;
+        sessionState.selectedBblLogIndexes = [];
+        sessionState.localBblAnalysesByLog = {};
+        sessionState.localBblAnalysis = null;
+        bblFileData.value = null;
+    }
+
     function initialize() {
+        refreshLocalBblAnalysis();
         initialized.value = true;
     }
 
@@ -436,6 +446,7 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
 
     function refreshLocalBblAnalysis() {
         if (!sessionState.bblSummary?.availableLogs?.length) {
+            sessionState.selectedBblLogIndexes = [];
             sessionState.localBblAnalysesByLog = {};
             sessionState.localBblAnalysis = null;
             return null;
@@ -484,10 +495,12 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
             sessionState.sourceFileName = imported.fileName;
             sessionState.sourceType = imported.type;
             if (imported.type === "cli") {
+                clearBblDerivedState();
                 const cliSummary = imported.cliSummary;
                 sessionState.cliText = "";
                 sessionState.parsedCliSummary = cliSummary;
             } else if (imported.type === "csv") {
+                clearBblDerivedState();
                 sessionState.csvSummary = imported.csvSummary;
             } else if (imported.type === "bbl") {
                 sessionState.bblSummary = imported.bblSummary;
