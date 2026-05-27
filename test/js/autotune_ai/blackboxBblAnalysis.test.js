@@ -27,30 +27,53 @@ describe("autotune AI ordinary BBL analysis", () => {
                 },
             },
             craftContext: { craftType: "long-range", flightStyle: "smooth-cruise", riskPreference: "balanced" },
-            staticConfig: { rates: { roll_rate: 85, pitch_rate: 85, yaw_rate: 70 } },
+            staticConfig: { rates: { rates_type: 1, roll_rate: 85, pitch_rate: 85, yaw_rate: 70 } },
         });
 
-        expect(result.quality.status).toBe("usable");
-        expect(result.quality.reason).toBe("sufficient_required_data");
-        expect(result.diagnostics).toEqual(
-            expect.arrayContaining([expect.objectContaining({ type: "motor_output_imbalance", confidence: "high" })]),
-        );
-        expect(result.recommendations).toEqual(
-            expect.arrayContaining([
-                expect.objectContaining({
-                    type: "inspect_powertrain_balance",
-                    group: "mechanical",
-                    actionability: "manual_check",
-                }),
-            ]),
-        );
-        expect(result.evidenceSummary).toEqual(
-            expect.objectContaining({
-                qualityStatus: "usable",
-                qualityReason: "sufficient_required_data",
-                diagnosticTypes: expect.arrayContaining(["motor_output_imbalance"]),
-            }),
-        );
+        expect(result.quality).toEqual({
+            status: "usable",
+            reason: "sufficient_required_data",
+            evidence: {
+                decodedMainFrames: 1200,
+                durationUs: 8_000_000,
+                corruptFrames: 0,
+                unsupportedEncodedFrames: 0,
+                missingRequiredColumns: [],
+            },
+        });
+        expect(result.diagnostics).toEqual([
+            {
+                type: "motor_output_imbalance",
+                confidence: "high",
+                risk: "elevated",
+                explanation: "Average motor outputs show a sustained spread that suggests balance or mechanical asymmetry.",
+                evidence: {
+                    motorMeans: {
+                        0: 1600,
+                        1: 1590,
+                        2: 1450,
+                        3: 1440,
+                    },
+                    meanSpread: 160,
+                    imbalanceRatio: 0.1046,
+                },
+            },
+        ]);
+        expect(result.recommendations).toEqual([
+            {
+                type: "inspect_powertrain_balance",
+                group: "mechanical",
+                priority: "high",
+                actionability: "manual_check",
+                explanation: "Check propellers, motor health, frame alignment, and CG before relying on PID changes.",
+            },
+        ]);
+        expect(result.evidenceSummary).toEqual({
+            qualityStatus: "usable",
+            qualityReason: "sufficient_required_data",
+            diagnosticTypes: ["motor_output_imbalance"],
+            diagnosticCount: 1,
+        });
     });
 
     it("marks logs with insufficient required fields as unusable", () => {
@@ -67,26 +90,34 @@ describe("autotune AI ordinary BBL analysis", () => {
             },
         });
 
-        expect(result.quality.status).toBe("unusable");
-        expect(result.quality.reason).toBe("insufficient_required_data");
+        expect(result.quality).toEqual({
+            status: "unusable",
+            reason: "insufficient_required_data",
+            evidence: {
+                decodedMainFrames: 30,
+                durationUs: 200_000,
+                corruptFrames: 0,
+                unsupportedEncodedFrames: 0,
+                missingRequiredColumns: ["time", "gyro", "setpoint", "motor"],
+            },
+        });
         expect(result.diagnostics).toEqual([]);
-        expect(result.recommendations).toEqual(
-            expect.arrayContaining([
-                expect.objectContaining({
-                    type: "collect_better_log",
-                    group: "data_quality",
-                    actionability: "capture_log",
-                }),
-            ]),
-        );
-        expect(result.evidenceSummary).toEqual(
-            expect.objectContaining({
-                qualityStatus: "unusable",
-                qualityReason: "insufficient_required_data",
-                diagnosticTypes: [],
-                diagnosticCount: 0,
-            }),
-        );
+        expect(result.recommendations).toEqual([
+            {
+                type: "collect_better_log",
+                group: "data_quality",
+                priority: "high",
+                actionability: "capture_log",
+                explanation:
+                    "Capture a longer log with required time, gyro, setpoint, and motor fields before tuning decisions.",
+            },
+        ]);
+        expect(result.evidenceSummary).toEqual({
+            qualityStatus: "unusable",
+            qualityReason: "insufficient_required_data",
+            diagnosticTypes: [],
+            diagnosticCount: 0,
+        });
     });
 
     it("reports a rates mismatch diagnostic when configured rates are aggressive for the craft profile", () => {
@@ -123,9 +154,31 @@ describe("autotune AI ordinary BBL analysis", () => {
         });
 
         expect(result.quality.status).toBe("usable");
-        expect(result.diagnostics).toEqual(
-            expect.arrayContaining([expect.objectContaining({ type: "rates_mismatch", confidence: "medium" })]),
-        );
+        expect(result.diagnostics).toContainEqual({
+            type: "rates_mismatch",
+            confidence: "medium",
+            risk: "moderate",
+            explanation: "Configured rates look aggressive for the declared craft profile and flight style.",
+            evidence: {
+                ratesType: 0,
+                craftType: "long-range",
+                flightStyle: "smooth-cruise",
+                exceededAxes: [
+                    { axis: "roll", configured: 92, recommendedMax: 80 },
+                    { axis: "pitch", configured: 88, recommendedMax: 80 },
+                    { axis: "yaw", configured: 75, recommendedMax: 65 },
+                ],
+                runtimeUsage: "low",
+            },
+        });
+        expect(result.recommendations).toContainEqual({
+            type: "review_rates_profile",
+            group: "rates",
+            priority: "medium",
+            actionability: "config_review",
+            explanation: "Compare configured rates against the long-range use case before tuning.",
+            configSnapshot: { rates_type: 0, roll_rate: 92, pitch_rate: 88, yaw_rate: 75 },
+        });
     });
 
     it("does not emit rates mismatch for nonzero rates types", () => {
@@ -246,6 +299,33 @@ describe("autotune AI ordinary BBL analysis", () => {
                     },
                     setpoint: {
                         0: { mean: 20, rms: 25, max: 48, count: 1200 },
+                    },
+                },
+            },
+        });
+
+        expect(result.diagnostics.find((item) => item.type === "motor_output_imbalance")).toBeUndefined();
+    });
+
+    it("ignores low-sample motor entries when evaluating motor imbalance", () => {
+        const result = analyzeBblLog({
+            summary: {
+                samples: {
+                    decodedMainFrames: 1200,
+                    corruptFrames: 0,
+                    unsupportedEncodedFrames: 0,
+                    durationUs: 8_000_000,
+                },
+                fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true, debug: false } },
+                fieldStats: {
+                    setpoint: {
+                        0: { mean: 18, rms: 22, max: 55, count: 1200 },
+                    },
+                    motor: {
+                        0: { mean: 1500, count: 1200 },
+                        1: { mean: 1502, count: 1200 },
+                        2: { mean: 1498, count: 1200 },
+                        3: { mean: 1780, count: 20 },
                     },
                 },
             },
