@@ -1,6 +1,14 @@
 import FC from "../fc";
 
 const MAX_PAYLOAD_BYTES = 20 * 1024;
+const MAX_LOCAL_ANALYSIS_ITEMS = 5;
+const MAX_DIAGNOSTIC_EXPLANATION_LENGTH = 240;
+const MAX_RECOMMENDATION_EXPLANATION_LENGTH = 240;
+const MAX_QUALITY_REASON_LENGTH = 160;
+const MAX_SOURCE_ITEMS = 4;
+const MAX_EVIDENCE_KEYS = 6;
+const MAX_CONFIG_SNAPSHOT_KEYS = 8;
+const MAX_NESTED_TEXT_LENGTH = 120;
 
 const FIRMWARE_KEYS = [
     "apiVersion",
@@ -48,7 +56,7 @@ function stripRawFields(value) {
         return undefined;
     }
     if (Array.isArray(value)) {
-        return value.map(stripRawFields);
+        return value.map(stripRawFields).filter((item) => item !== undefined);
     }
     if (!value || typeof value !== "object") {
         return value;
@@ -107,31 +115,236 @@ function getMetadataSource(currentFcAvailable, cliSummary, csvSummary, bblSummar
     return "missing";
 }
 
+function trimText(value, maxLength) {
+    if (typeof value !== "string") {
+        return undefined;
+    }
+
+    return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
+}
+
+function compactNestedValue(value) {
+    if (typeof value === "string") {
+        return trimText(value, MAX_NESTED_TEXT_LENGTH);
+    }
+
+    if (Array.isArray(value)) {
+        const items = value.map((item) => compactNestedValue(item)).filter((item) => item !== undefined);
+        return items.length ? items : undefined;
+    }
+
+    if (!value || typeof value !== "object") {
+        return value;
+    }
+
+    const compactObject = Object.fromEntries(
+        Object.entries(value)
+            .map(([key, item]) => [key, compactNestedValue(item)])
+            .filter(([, item]) => item !== undefined),
+    );
+
+    return Object.keys(compactObject).length ? compactObject : undefined;
+}
+
+function pickBoundedObject(source, maxKeys) {
+    if (!source || typeof source !== "object" || Array.isArray(source)) {
+        return undefined;
+    }
+
+    const entries = Object.entries(stripRawFields(source) || {})
+        .slice(0, maxKeys)
+        .map(([key, value]) => [key, compactNestedValue(value)])
+        .filter(([, value]) => value !== undefined);
+
+    return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+function summarizeDiagnosticItem(item, { includeConflict = false } = {}) {
+    if (!item || typeof item !== "object") {
+        return undefined;
+    }
+
+    const summary = {
+        type: item.type,
+        confidence: item.confidence,
+        risk: item.risk,
+        classification: item.classification,
+        explanation: trimText(item.explanation, MAX_DIAGNOSTIC_EXPLANATION_LENGTH),
+        evidence: pickBoundedObject(item.evidence, MAX_EVIDENCE_KEYS),
+    };
+
+    if (includeConflict) {
+        summary.conflict = item.conflict;
+        summary.sources = Array.isArray(item.sources) ? item.sources.slice(0, MAX_SOURCE_ITEMS).map((value) => String(value)) : undefined;
+    }
+
+    return Object.fromEntries(Object.entries(summary).filter(([, value]) => value !== undefined));
+}
+
+function summarizeRecommendationItem(item) {
+    if (!item || typeof item !== "object") {
+        return undefined;
+    }
+
+    return Object.fromEntries(
+        Object.entries({
+            type: item.type,
+            group: item.group,
+            priority: item.priority,
+            actionability: item.actionability,
+            explanation: trimText(item.explanation, MAX_RECOMMENDATION_EXPLANATION_LENGTH),
+            configSnapshot: pickBoundedObject(item.configSnapshot, MAX_CONFIG_SNAPSHOT_KEYS),
+        }).filter(([, value]) => value !== undefined),
+    );
+}
+
+function summarizeLocalBblAnalysis(localBblAnalysis) {
+    if (!localBblAnalysis || typeof localBblAnalysis !== "object") {
+        return null;
+    }
+
+    const aggregateQuality =
+        localBblAnalysis.aggregateQuality && typeof localBblAnalysis.aggregateQuality === "object"
+            ? Object.fromEntries(
+                  Object.entries({
+                      status: localBblAnalysis.aggregateQuality.status,
+                      reason: trimText(localBblAnalysis.aggregateQuality.reason, MAX_QUALITY_REASON_LENGTH),
+                  }).filter(([, value]) => value !== undefined),
+              )
+            : undefined;
+
+    const summary = {
+        selectedLogIndexes: Array.isArray(localBblAnalysis.selectedLogIndexes) ? [...localBblAnalysis.selectedLogIndexes] : undefined,
+        aggregateQuality,
+        consensusDiagnostics: Array.isArray(localBblAnalysis.consensusDiagnostics)
+            ? localBblAnalysis.consensusDiagnostics
+                  .slice(0, MAX_LOCAL_ANALYSIS_ITEMS)
+                  .map((item) => summarizeDiagnosticItem(item))
+                  .filter((item) => item && Object.keys(item).length > 0)
+            : undefined,
+        conflictingDiagnostics: Array.isArray(localBblAnalysis.conflictingDiagnostics)
+            ? localBblAnalysis.conflictingDiagnostics
+                  .slice(0, MAX_LOCAL_ANALYSIS_ITEMS)
+                  .map((item) => summarizeDiagnosticItem(item, { includeConflict: true }))
+                  .filter((item) => item && Object.keys(item).length > 0)
+            : undefined,
+        aggregateRecommendations: Array.isArray(localBblAnalysis.aggregateRecommendations)
+            ? localBblAnalysis.aggregateRecommendations
+                  .slice(0, MAX_LOCAL_ANALYSIS_ITEMS)
+                  .map((item) => summarizeRecommendationItem(item))
+                  .filter((item) => item && Object.keys(item).length > 0)
+            : undefined,
+    };
+
+    return Object.fromEntries(Object.entries(summary).filter(([, value]) => value !== undefined));
+}
+
 function enforcePayloadLimit(payload) {
-    let compact = payload;
-    let serialized = JSON.stringify(compact);
-
-    if (serialized.length <= MAX_PAYLOAD_BYTES) {
-        return compact;
-    }
-
-    compact = {
-        ...payload,
-        dynamicAnalysis: { axes: {} },
-    };
-    serialized = JSON.stringify(compact);
-
-    if (serialized.length <= MAX_PAYLOAD_BYTES) {
-        return compact;
-    }
-
-    return {
-        ...compact,
-        staticConfig: {
-            ...compact.staticConfig,
-            cli: undefined,
+    const candidates = [
+        payload,
+        {
+            ...payload,
+            dynamicAnalysis: { axes: {} },
         },
-    };
+        {
+            ...payload,
+            dynamicAnalysis: { axes: {} },
+            localAnalysis: payload.localAnalysis
+                ? {
+                      selectedLogIndexes: payload.localAnalysis.selectedLogIndexes,
+                      aggregateQuality: payload.localAnalysis.aggregateQuality,
+                  }
+                : undefined,
+        },
+        {
+            ...payload,
+            dynamicAnalysis: { axes: {} },
+            localAnalysis: undefined,
+            staticConfig: {
+                ...payload.staticConfig,
+                cli: undefined,
+            },
+            inputSources: {
+                ...payload.inputSources,
+                cli: {
+                    ...payload.inputSources?.cli,
+                    summary: undefined,
+                },
+            },
+        },
+        {
+            ...payload,
+            dynamicAnalysis: { axes: {} },
+            localAnalysis: undefined,
+            staticConfig: {
+                ...payload.staticConfig,
+                cli: undefined,
+                csv: undefined,
+            },
+            inputSources: {
+                ...payload.inputSources,
+                cli: {
+                    ...payload.inputSources?.cli,
+                    summary: undefined,
+                },
+                csv: {
+                    ...payload.inputSources?.csv,
+                    summary: undefined,
+                },
+            },
+        },
+        {
+            ...payload,
+            dynamicAnalysis: { axes: {} },
+            localAnalysis: undefined,
+            staticConfig: {
+                ...payload.staticConfig,
+                cli: undefined,
+                csv: undefined,
+                bbl: undefined,
+            },
+            inputSources: {
+                ...payload.inputSources,
+                cli: {
+                    ...payload.inputSources?.cli,
+                    summary: undefined,
+                },
+                csv: {
+                    ...payload.inputSources?.csv,
+                    summary: undefined,
+                },
+                bbl: {
+                    ...payload.inputSources?.bbl,
+                    summary: undefined,
+                },
+            },
+        },
+    ];
+
+    let smallest = candidates[0];
+    let smallestSize = JSON.stringify(smallest).length;
+
+    for (const candidate of candidates) {
+        const serialized = JSON.stringify(candidate);
+        const size = serialized.length;
+
+        if (size < smallestSize) {
+            smallest = candidate;
+            smallestSize = size;
+        }
+
+        if (size <= MAX_PAYLOAD_BYTES) {
+            return candidate;
+        }
+    }
+
+    const finalSize = JSON.stringify(smallest).length;
+
+    if (finalSize <= MAX_PAYLOAD_BYTES) {
+        return smallest;
+    }
+
+    return smallest;
 }
 
 export function buildAiPayload({
@@ -147,15 +360,7 @@ export function buildAiPayload({
     const safeCliSummary = cliSummary ? stripRawFields(cliSummary) : null;
     const safeCsvSummary = csvSummary ? stripRawFields(csvSummary) : null;
     const safeBblSummary = bblSummary ? stripRawFields(bblSummary) : null;
-    const safeLocalBblAnalysis = localBblAnalysis
-        ? stripRawFields({
-              selectedLogIndexes: localBblAnalysis.selectedLogIndexes,
-              aggregateQuality: localBblAnalysis.aggregateQuality,
-              consensusDiagnostics: localBblAnalysis.consensusDiagnostics,
-              conflictingDiagnostics: localBblAnalysis.conflictingDiagnostics,
-              aggregateRecommendations: localBblAnalysis.aggregateRecommendations,
-          })
-        : null;
+    const safeLocalBblAnalysis = summarizeLocalBblAnalysis(localBblAnalysis);
 
     const payload = {
         craftContext: stripRawFields(craftContext),

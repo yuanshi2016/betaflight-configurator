@@ -64,6 +64,10 @@ describe("autotune AI provider adapters", () => {
         expect(body.messages[0].content).toContain("Treat localAnalysis as the primary technical evidence for ordinary Blackbox logs.");
         expect(body.messages[0].content).toContain("Do not contradict localAnalysis unless you explicitly state uncertainty and limitations.");
         expect(body.messages[0].content).toContain("Use local diagnostics and local recommendations to explain your conclusion.");
+        expect(body.messages[0].content).toContain("For initial analysis, return only JSON matching the requested response contract.");
+        expect(body.messages[0].content).toContain(
+            "For follow-up questions, answer in plain text unless you are updating writeable recommendations; updated recommendations must use the same JSON contract.",
+        );
     });
 
     it("keeps temperature when DeepSeek OpenAI-compatible thinking mode is disabled", () => {
