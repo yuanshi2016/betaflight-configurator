@@ -5,6 +5,7 @@ const QUALITY_STATUS = {
 };
 
 const CONFIDENCE_LEVELS = ["low", "medium", "high"];
+const PRIORITY_LEVELS = ["low", "medium", "high"];
 
 function getConfidenceLevel(confidence) {
     const index = CONFIDENCE_LEVELS.indexOf(confidence);
@@ -61,7 +62,26 @@ function getDiagnosticFingerprint(diagnostic) {
 }
 
 function getRecommendationKey(recommendation) {
+    if (!recommendation?.type) {
+        return "";
+    }
+
     return [recommendation?.type || "", recommendation?.group || "", recommendation?.actionability || ""].join("|");
+}
+
+function mergePriority(currentPriority, nextPriority) {
+    const currentLevel = PRIORITY_LEVELS.indexOf(currentPriority);
+    const nextLevel = PRIORITY_LEVELS.indexOf(nextPriority);
+
+    if (currentLevel === -1) {
+        return nextPriority;
+    }
+
+    if (nextLevel === -1) {
+        return currentPriority;
+    }
+
+    return PRIORITY_LEVELS[Math.max(currentLevel, nextLevel)];
 }
 
 function pickPreferredText(currentValue, nextValue) {
@@ -161,7 +181,7 @@ function mergeRecommendation(existing, incoming) {
 
     merged.type = existing.type || incoming.type;
     merged.group = existing.group || incoming.group;
-    merged.priority = existing.priority || incoming.priority;
+    merged.priority = mergePriority(existing.priority, incoming.priority);
     merged.actionability = existing.actionability || incoming.actionability;
     merged.explanation = pickPreferredText(existing.explanation, incoming.explanation);
     merged.configSnapshot = mergeConfigSnapshots(existing.configSnapshot, incoming.configSnapshot);

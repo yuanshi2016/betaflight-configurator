@@ -55,10 +55,16 @@ describe("autotune AI multi-log BBL aggregation", () => {
                     {
                         type: "review_rates_profile",
                         group: "rates",
-                        priority: "medium",
+                        priority: "low",
                         actionability: "config_review",
                         explanation: "Compare configured rates against the long-range use case before tuning.",
                         configSnapshot: { rates_type: 0, roll_rate: 70, pitch_rate: 68, yaw_rate: 60 },
+                    },
+                    {
+                        group: "rates",
+                        priority: "high",
+                        actionability: "config_review",
+                        explanation: "Malformed recommendation without a type should be ignored.",
                     },
                 ],
             },
@@ -70,7 +76,7 @@ describe("autotune AI multi-log BBL aggregation", () => {
                     {
                         type: "review_rates_profile",
                         group: "rates",
-                        priority: "medium",
+                        priority: "high",
                         actionability: "config_review",
                         explanation: "Compare configured rates against the long-range use case before tuning.",
                         configSnapshot: { rates_type: 0, roll_rate: 65, pitch_rate: 70, yaw_rate: 58 },
@@ -91,6 +97,7 @@ describe("autotune AI multi-log BBL aggregation", () => {
                 expect.objectContaining({
                     type: "review_rates_profile",
                     group: "rates",
+                    priority: "high",
                     actionability: "config_review",
                     sources: 2,
                     configSnapshot: {
@@ -108,6 +115,7 @@ describe("autotune AI multi-log BBL aggregation", () => {
                 }),
             ]),
         );
+        expect(aggregate.aggregateRecommendations).toHaveLength(2);
     });
 
     it("does not create false consensus for materially different rates mismatch evidence", () => {
