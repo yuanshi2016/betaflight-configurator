@@ -398,28 +398,51 @@ describe("autotune AI ordinary BBL analysis", () => {
         expect(unusableResult.recommendations.find((item) => item.type === "review_rates_profile")).toBeUndefined();
     });
 
-    it("keeps filter writes explain-only for a single usable log even when fft evidence exists", () => {
+    it("builds conservative filter candidates but keeps single-log filter writes explain-only", () => {
         const result = analyzeBblLog({
             summary: {
                 samples: { decodedMainFrames: 1400, corruptFrames: 0, unsupportedEncodedFrames: 0, durationUs: 8_000_000 },
                 fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true } },
                 analysisInput: {
                     axes: {
-                        roll: {
-                            timeUs: Array.from({ length: 128 }, (_, index) => index * 500),
-                            gyro: Array.from({ length: 128 }, (_, index) => Math.sin(index / 4) * 60),
-                            setpoint: Array.from({ length: 128 }, () => 0),
-                            dterm: Array.from({ length: 128 }, (_, index) => Math.sin(index / 3) * 20),
-                        },
+                        roll: buildAxisSeries({
+                            length: 256,
+                            sampleRateHz: 1000,
+                            setpointValue: 100,
+                            gyroValue: 55,
+                            dtermValue: 20,
+                            peakHz: 180,
+                            peakAmplitude: 35,
+                        }),
                     },
                 },
             },
             craftContext: { craftType: "freestyle", frameSize: "5寸" },
-            staticConfig: { rates: { rates_type: 0 } },
+            staticConfig: {
+                rates: { rates_type: 0 },
+                filters: {
+                    slider_gyro_filter_multiplier: 100,
+                    slider_dterm_filter_multiplier: 100,
+                },
+            },
         });
 
         expect(result.writeEnvelope.filters.writeableAllowed).toBe(false);
         expect(result.writeEnvelope.filters.blockedReason).toBe("single_log_filter_evidence_requires_confirmation");
+        expect(result.writeEnvelope.filters.candidates).toEqual({
+            slider_gyro_filter_multiplier: expect.objectContaining({
+                suggestedValue: 95,
+                min: 95,
+                max: 100,
+                step: 1,
+            }),
+            slider_dterm_filter_multiplier: expect.objectContaining({
+                suggestedValue: 92,
+                min: 92,
+                max: 100,
+                step: 1,
+            }),
+        });
     });
 
     it("blocks pid writes when high-confidence motor imbalance is present", () => {

@@ -443,19 +443,27 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
     }
 
     function buildLocalAnalysisStaticConfig() {
+        const result = {};
+
         if (FC?.RC_TUNING && Object.keys(FC.RC_TUNING).length) {
-            return {
-                rates: { ...FC.RC_TUNING },
+            result.rates = { ...FC.RC_TUNING };
+        } else if (sessionState.parsedCliSummary?.rates && Object.keys(sessionState.parsedCliSummary.rates).length) {
+            result.rates = { ...sessionState.parsedCliSummary.rates };
+        }
+
+        if (FC?.TUNING_SLIDERS && Object.keys(FC.TUNING_SLIDERS).length) {
+            result.filters = {
+                slider_gyro_filter_multiplier: FC.TUNING_SLIDERS.slider_gyro_filter_multiplier,
+                slider_dterm_filter_multiplier: FC.TUNING_SLIDERS.slider_dterm_filter_multiplier,
+            };
+        } else if (sessionState.parsedCliSummary?.filters && Object.keys(sessionState.parsedCliSummary.filters).length) {
+            result.filters = {
+                slider_gyro_filter_multiplier: sessionState.parsedCliSummary.filters.simplified_gyro_filter_multiplier,
+                slider_dterm_filter_multiplier: sessionState.parsedCliSummary.filters.simplified_dterm_filter_multiplier,
             };
         }
 
-        if (sessionState.parsedCliSummary?.rates && Object.keys(sessionState.parsedCliSummary.rates).length) {
-            return {
-                rates: { ...sessionState.parsedCliSummary.rates },
-            };
-        }
-
-        return {};
+        return result;
     }
 
     function analyzeSelectedBblLog(index) {

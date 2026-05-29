@@ -17,6 +17,7 @@ const mockBuildAiPayload = vi.fn();
 const mockParseCliConfig = vi.fn();
 const mockFc = {
     RC_TUNING: null,
+    TUNING_SLIDERS: null,
 };
 
 vi.mock("../../../src/js/autotune-ai/blackboxBblSummary", () => ({
@@ -122,6 +123,7 @@ describe("autotune AI store defaults", () => {
         mockDetectAutotuneInputSource.mockReturnValue("cli");
         mockBuildAiPayload.mockReturnValue({});
         mockFc.RC_TUNING = null;
+        mockFc.TUNING_SLIDERS = null;
         mockParseCliConfig.mockReturnValue(null);
     });
 
@@ -497,9 +499,19 @@ describe("autotune AI store defaults", () => {
             roll_rate: 900,
             pitch_rate: 800,
         };
+        mockFc.TUNING_SLIDERS = {
+            slider_gyro_filter_multiplier: 97,
+            slider_dterm_filter_multiplier: 94,
+        };
 
         const store = useAutotuneAiStore();
-        store.sessionState.parsedCliSummary = { rates: { roll_rate: 700 } };
+        store.sessionState.parsedCliSummary = {
+            rates: { roll_rate: 700 },
+            filters: {
+                simplified_gyro_filter_multiplier: 90,
+                simplified_dterm_filter_multiplier: 88,
+            },
+        };
         mockDetectAutotuneInputSource.mockReturnValue("bbl");
 
         await store.importInputFile(createBblFile());
@@ -509,6 +521,36 @@ describe("autotune AI store defaults", () => {
             rates: {
                 roll_rate: 900,
                 pitch_rate: 800,
+            },
+            filters: {
+                slider_gyro_filter_multiplier: 97,
+                slider_dterm_filter_multiplier: 94,
+            },
+        });
+    });
+
+    it("falls back to parsed CLI filter sliders when current FC filter sliders are unavailable", async () => {
+        const store = useAutotuneAiStore();
+        store.sessionState.parsedCliSummary = {
+            rates: { roll_rate: 700, pitch_rate: 680 },
+            filters: {
+                simplified_gyro_filter_multiplier: 93,
+                simplified_dterm_filter_multiplier: 91,
+            },
+        };
+        mockDetectAutotuneInputSource.mockReturnValue("bbl");
+
+        await store.importInputFile(createBblFile());
+
+        const [{ staticConfig }] = mockAnalyzeBblLog.mock.calls.at(-1);
+        expect(staticConfig).toEqual({
+            rates: {
+                roll_rate: 700,
+                pitch_rate: 680,
+            },
+            filters: {
+                slider_gyro_filter_multiplier: 93,
+                slider_dterm_filter_multiplier: 91,
             },
         });
     });

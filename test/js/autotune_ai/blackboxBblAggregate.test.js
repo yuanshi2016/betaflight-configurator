@@ -390,6 +390,92 @@ describe("autotune AI multi-log BBL aggregation", () => {
         );
     });
 
+    it("promotes filters to writeable when multiple usable logs agree on the same suggested values", () => {
+        const aggregate = aggregateBblAnalyses([
+            {
+                logIndex: 0,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    filters: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "medium",
+                        candidates: {
+                            slider_gyro_filter_multiplier: {
+                                suggestedValue: 95,
+                                min: 95,
+                                max: 100,
+                                step: 1,
+                                reason: "first",
+                                evidenceRefs: ["roll.frequencyDomain.gyroPeakMagnitude"],
+                            },
+                            slider_dterm_filter_multiplier: {
+                                suggestedValue: 92,
+                                min: 92,
+                                max: 100,
+                                step: 1,
+                                reason: "first",
+                                evidenceRefs: ["roll.frequencyDomain.dtermHighFreqAvg"],
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                logIndex: 1,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    filters: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "high",
+                        candidates: {
+                            slider_gyro_filter_multiplier: {
+                                suggestedValue: 95,
+                                min: 95,
+                                max: 100,
+                                step: 1,
+                                reason: "second",
+                                evidenceRefs: ["pitch.frequencyDomain.gyroPeakMagnitude"],
+                            },
+                            slider_dterm_filter_multiplier: {
+                                suggestedValue: 92,
+                                min: 92,
+                                max: 100,
+                                step: 1,
+                                reason: "second",
+                                evidenceRefs: ["pitch.frequencyDomain.dtermHighFreqAvg"],
+                            },
+                        },
+                    },
+                },
+            },
+        ]);
+
+        expect(aggregate.writeEnvelope.filters.writeableAllowed).toBe(true);
+        expect(aggregate.writeEnvelope.filters.confidence).toBe("high");
+        expect(aggregate.writeEnvelope.filters.candidates.slider_gyro_filter_multiplier).toEqual(
+            expect.objectContaining({
+                suggestedValue: 95,
+                min: 95,
+                max: 100,
+                step: 1,
+            }),
+        );
+        expect(aggregate.writeEnvelope.filters.candidates.slider_dterm_filter_multiplier).toEqual(
+            expect.objectContaining({
+                suggestedValue: 92,
+                min: 92,
+                max: 100,
+                step: 1,
+            }),
+        );
+    });
+
     it("downgrades filters to explain-only when usable logs disagree on suggested filter values", () => {
         const aggregate = aggregateBblAnalyses([
             {
