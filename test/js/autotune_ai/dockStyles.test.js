@@ -253,6 +253,9 @@ describe("autotune AI dock styles", () => {
         expect(component).toContain("autotuneAiLocalCandidates");
         expect(component).toContain("autotuneAiAcceptedByLocalGuard");
         expect(component).toContain("autotuneAiRejectedByLocalGuard");
+        expect(component).toContain("formatWriteEnvelopeBlockedReason");
+        expect(component).toContain("autotuneAiBlockedReasonMechanicalImbalance");
+        expect(component).toContain("autotuneAiBlockedReasonConflictingValues");
         expect(component).toContain("sessionState.localWriteEnvelope");
         expect(component).toContain("sessionState.effectivePlan");
 
@@ -261,6 +264,8 @@ describe("autotune AI dock styles", () => {
         expect(englishMessages).toContain("autotuneAiLocalCandidates");
         expect(englishMessages).toContain("autotuneAiAcceptedByLocalGuard");
         expect(englishMessages).toContain("autotuneAiRejectedByLocalGuard");
+        expect(englishMessages).toContain("autotuneAiBlockedReasonMechanicalImbalance");
+        expect(englishMessages).toContain("autotuneAiBlockedReasonConflictingValues");
         expect(englishMessages).toContain("autotuneAiExplainOnly");
 
         expect(chineseMessages).toContain("autotuneAiLocalWriteEnvelope");
@@ -268,6 +273,8 @@ describe("autotune AI dock styles", () => {
         expect(chineseMessages).toContain("autotuneAiLocalCandidates");
         expect(chineseMessages).toContain("autotuneAiAcceptedByLocalGuard");
         expect(chineseMessages).toContain("autotuneAiRejectedByLocalGuard");
+        expect(chineseMessages).toContain("autotuneAiBlockedReasonMechanicalImbalance");
+        expect(chineseMessages).toContain("autotuneAiBlockedReasonConflictingValues");
         expect(chineseMessages).toContain("autotuneAiExplainOnly");
 
         expect(traditionalChineseMessages).toContain("autotuneAiLocalWriteEnvelope");
@@ -275,6 +282,8 @@ describe("autotune AI dock styles", () => {
         expect(traditionalChineseMessages).toContain("autotuneAiLocalCandidates");
         expect(traditionalChineseMessages).toContain("autotuneAiAcceptedByLocalGuard");
         expect(traditionalChineseMessages).toContain("autotuneAiRejectedByLocalGuard");
+        expect(traditionalChineseMessages).toContain("autotuneAiBlockedReasonMechanicalImbalance");
+        expect(traditionalChineseMessages).toContain("autotuneAiBlockedReasonConflictingValues");
         expect(traditionalChineseMessages).toContain("autotuneAiExplainOnly");
     });
 

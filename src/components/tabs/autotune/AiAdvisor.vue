@@ -424,7 +424,7 @@
                         {{
                             group.data.writeableAllowed
                                 ? $t("autotuneAiLocalCandidates")
-                                : $t("autotuneAiExplainOnly")
+                                : formatWriteEnvelopeBlockedReason(group.data.blockedReason)
                         }}
                     </p>
                     <dl class="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-xs">
@@ -1201,6 +1201,23 @@ function formatLogQualityReason(reason) {
         sufficient_required_data: t("autotuneAiLogReasonSufficientRequiredData"),
         missing_quality: t("autotuneAiLogReasonMissingQuality"),
     }[reason] || t("autotuneAiAggregateReasonFallback");
+}
+
+function formatWriteEnvelopeBlockedReason(reason) {
+    return (
+        {
+            insufficient_filter_evidence: t("autotuneAiBlockedReasonInsufficientFilterEvidence"),
+            insufficient_pid_evidence: t("autotuneAiBlockedReasonInsufficientPidEvidence"),
+            insufficient_rates_evidence: t("autotuneAiBlockedReasonInsufficientRatesEvidence"),
+            no_rates_mismatch_detected: t("autotuneAiBlockedReasonNoRatesMismatch"),
+            single_log_filter_evidence_requires_confirmation: t("autotuneAiBlockedReasonSingleLogFilterConfirmation"),
+            single_log_pid_requires_multi_log_confirmation: t("autotuneAiBlockedReasonSingleLogPidConfirmation"),
+            mechanical_imbalance_detected: t("autotuneAiBlockedReasonMechanicalImbalance"),
+            conflicting_candidate_values: t("autotuneAiBlockedReasonConflictingValues"),
+            aggregate_quality_not_usable: t("autotuneAiBlockedReasonAggregateQuality"),
+            no_group_envelope: t("autotuneAiBlockedReasonNoGroupEnvelope"),
+        }[reason] || reason || t("autotuneAiExplainOnly")
+    );
 }
 
 function formatLogEvidenceSummary(log) {
