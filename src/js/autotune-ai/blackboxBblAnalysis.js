@@ -657,6 +657,31 @@ function buildFilterCandidate(currentValue, delta, reason, evidenceRefs) {
     };
 }
 
+function getCurrentPidSliderValue(pid = {}, key) {
+    if (Number.isFinite(pid?.[key])) {
+        return Number(pid[key]);
+    }
+
+    const simplifiedKey = key.replace(/^slider_/u, "simplified_");
+    if (Number.isFinite(pid?.[simplifiedKey])) {
+        return Number(pid[simplifiedKey]);
+    }
+
+    return null;
+}
+
+function buildPidIncreaseCandidate(currentValue, delta, reason, evidenceRefs) {
+    const suggestedValue = Math.round(currentValue + delta);
+    return {
+        suggestedValue,
+        min: currentValue,
+        max: suggestedValue,
+        step: 1,
+        reason,
+        evidenceRefs,
+    };
+}
+
 function buildFiltersWriteEnvelope({ quality, axes, diagnostics, staticConfig } = {}) {
     if (hasHighConfidenceMotorImbalance(diagnostics)) {
         return {
@@ -746,7 +771,7 @@ function buildFiltersWriteEnvelope({ quality, axes, diagnostics, staticConfig } 
     };
 }
 
-function buildPidWriteEnvelope({ quality, diagnostics } = {}) {
+function buildPidWriteEnvelope({ quality, diagnostics, axes, staticConfig } = {}) {
     if (quality?.status !== QUALITY_STATUS.USABLE) {
         return {
             writeableAllowed: false,
@@ -765,11 +790,86 @@ function buildPidWriteEnvelope({ quality, diagnostics } = {}) {
         };
     }
 
+    const pidConfig = staticConfig?.pid || {};
+    const candidates = {};
+    const pidAxes = FILTER_AXIS_NAMES.map((axisName) => axes?.[axisName]).filter(Boolean);
+
+    const hasConsistentPIncrease = pidAxes.length >= 2 && pidAxes.every((axis) => axis?.pidAdvice?.p?.direction === "increase");
+    const hasStrongMovingError = pidAxes.length >= 2 && pidAxes.every((axis) => (axis?.timeDomain?.meanErrMoving || 0) >= 35);
+    const hasLowSteadyError = pidAxes.some((axis) => (axis?.timeDomain?.meanErrSteady || 0) <= 5);
+    const hasFilterRisk = pidAxes.some(
+        (axis) =>
+            axis?.filterAdvice?.gyroNotch?.direction === "enable" || axis?.filterAdvice?.dtermLowpass?.direction === "lower",
+    );
+
+    const currentMaster = getCurrentPidSliderValue(pidConfig, "slider_master_multiplier");
+    if (Number.isFinite(currentMaster) && hasConsistentPIncrease && hasStrongMovingError) {
+        candidates.slider_master_multiplier = buildPidIncreaseCandidate(
+            currentMaster,
+            2,
+            "Repeated roll/pitch under-tracking supports a small master multiplier increase.",
+            ["roll.timeDomain.meanErrMoving", "pitch.timeDomain.meanErrMoving"],
+        );
+    }
+
+    const currentFf = getCurrentPidSliderValue(pidConfig, "slider_feedforward_gain");
+    if (
+        Number.isFinite(currentFf) &&
+        pidAxes.some((axis) => axis?.pidAdvice?.ff?.direction === "increase") &&
+        hasStrongMovingError &&
+        hasLowSteadyError
+    ) {
+        candidates.slider_feedforward_gain = buildPidIncreaseCandidate(
+            currentFf,
+            4,
+            "Repeated moving-error under stick demand supports a small feedforward increase.",
+            ["roll.pidAdvice.ff", "pitch.pidAdvice.ff"],
+        );
+    }
+
+    const currentI = getCurrentPidSliderValue(pidConfig, "slider_i_gain");
+    if (
+        Number.isFinite(currentI) &&
+        pidAxes.some((axis) => axis?.pidAdvice?.i?.direction === "increase") &&
+        pidAxes.some((axis) => (axis?.timeDomain?.meanErrSteady || 0) >= 5)
+    ) {
+        candidates.slider_i_gain = buildPidIncreaseCandidate(
+            currentI,
+            2,
+            "Repeated steady-state tracking error supports a small I gain increase.",
+            ["roll.timeDomain.meanErrSteady", "pitch.timeDomain.meanErrSteady"],
+        );
+    }
+
+    const currentD = getCurrentPidSliderValue(pidConfig, "slider_d_gain");
+    if (
+        Number.isFinite(currentD) &&
+        !hasFilterRisk &&
+        pidAxes.length >= 2 &&
+        pidAxes.every((axis) => axis?.pidAdvice?.d?.direction === "increase")
+    ) {
+        candidates.slider_d_gain = buildPidIncreaseCandidate(
+            currentD,
+            3,
+            "Repeated peak-error evidence with no competing filter risk supports a small D gain increase.",
+            ["roll.pidAdvice.d", "pitch.pidAdvice.d"],
+        );
+    }
+
+    if (!Object.keys(candidates).length) {
+        return {
+            writeableAllowed: false,
+            blockedReason: "insufficient_pid_evidence",
+            confidence: "low",
+            candidates: {},
+        };
+    }
+
     return {
         writeableAllowed: false,
         blockedReason: "single_log_pid_requires_multi_log_confirmation",
         confidence: "medium",
-        candidates: {},
+        candidates,
     };
 }
 
@@ -874,7 +974,7 @@ export function analyzeBblLog({ summary, craftContext = {}, staticConfig = {} } 
     const writeEnvelope = {
         rates: buildRatesWriteEnvelope(summary, craftContext, staticConfig, quality),
         filters: buildFiltersWriteEnvelope({ quality, axes, diagnostics, staticConfig }),
-        pid: buildPidWriteEnvelope({ quality, diagnostics }),
+        pid: buildPidWriteEnvelope({ quality, diagnostics, axes, staticConfig }),
     };
 
     return {

@@ -476,6 +476,81 @@ describe("autotune AI ordinary BBL analysis", () => {
         expect(result.writeEnvelope.pid.blockedReason).toBe("mechanical_imbalance_detected");
     });
 
+    it("builds conservative PID candidates but keeps single-log PID writes explain-only", () => {
+        const result = analyzeBblLog({
+            summary: {
+                samples: {
+                    decodedMainFrames: 256,
+                    corruptFrames: 0,
+                    unsupportedEncodedFrames: 0,
+                    durationUs: 255_000,
+                },
+                fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true, debug: true } },
+                fieldStats: {
+                    motor: {
+                        0: { mean: 1500, count: 256 },
+                        1: { mean: 1501, count: 256 },
+                        2: { mean: 1499, count: 256 },
+                        3: { mean: 1500, count: 256 },
+                    },
+                },
+                analysisInput: {
+                    sourceType: "bbl",
+                    craftClass: "5-6in",
+                    axes: {
+                        roll: buildAxisSeries({
+                            length: 256,
+                            sampleRateHz: 1000,
+                            setpointValue: 100,
+                            gyroValue: 55,
+                            dtermValue: 20,
+                            peakHz: 180,
+                            peakAmplitude: 35,
+                        }),
+                        pitch: buildAxisSeries({
+                            length: 256,
+                            sampleRateHz: 1000,
+                            setpointValue: 90,
+                            gyroValue: 50,
+                            dtermValue: 18,
+                            peakHz: 185,
+                            peakAmplitude: 32,
+                        }),
+                    },
+                },
+            },
+            craftContext: { craftType: "freestyle", frameSize: "5" },
+            staticConfig: {
+                pid: {
+                    slider_pids_mode: 1,
+                    slider_master_multiplier: 100,
+                    slider_i_gain: 100,
+                    slider_d_gain: 100,
+                    slider_feedforward_gain: 100,
+                },
+            },
+        });
+
+        expect(result.writeEnvelope.pid.writeableAllowed).toBe(false);
+        expect(result.writeEnvelope.pid.blockedReason).toBe("single_log_pid_requires_multi_log_confirmation");
+        expect(result.writeEnvelope.pid.candidates).toEqual({
+            slider_master_multiplier: expect.objectContaining({
+                suggestedValue: 102,
+                min: 100,
+                max: 102,
+                step: 1,
+            }),
+            slider_feedforward_gain: expect.objectContaining({
+                suggestedValue: 104,
+                min: 100,
+                max: 104,
+                step: 1,
+            }),
+        });
+        expect(result.writeEnvelope.pid.candidates.slider_i_gain).toBeUndefined();
+        expect(result.writeEnvelope.pid.candidates.slider_d_gain).toBeUndefined();
+    });
+
     it("keeps rates write envelopes explain-only when the log quality is degraded", () => {
         const result = analyzeBblLog({
             summary: {
