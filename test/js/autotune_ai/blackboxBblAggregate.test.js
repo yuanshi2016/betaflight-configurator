@@ -303,4 +303,334 @@ describe("autotune AI multi-log BBL aggregation", () => {
             ]),
         );
     });
+
+    it("promotes rates to writeable when multiple usable logs agree on the same suggested values", () => {
+        const aggregate = aggregateBblAnalyses([
+            {
+                logIndex: 0,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    rates: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "medium",
+                        candidates: {
+                            roll_rate: {
+                                suggestedValue: 90,
+                                min: 90,
+                                max: 95,
+                                step: 1,
+                                reason: "same",
+                                evidenceRefs: ["ratesMismatch.roll"],
+                            },
+                        },
+                    },
+                    filters: {
+                        writeableAllowed: false,
+                        blockedReason: "single_log_filter_evidence_requires_confirmation",
+                        confidence: "medium",
+                        candidates: {},
+                    },
+                    pid: {
+                        writeableAllowed: false,
+                        blockedReason: "single_log_pid_requires_multi_log_confirmation",
+                        confidence: "medium",
+                        candidates: {},
+                    },
+                },
+            },
+            {
+                logIndex: 1,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    rates: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "high",
+                        candidates: {
+                            roll_rate: {
+                                suggestedValue: 90,
+                                min: 90,
+                                max: 95,
+                                step: 1,
+                                reason: "same",
+                                evidenceRefs: ["ratesMismatch.roll"],
+                            },
+                        },
+                    },
+                    filters: {
+                        writeableAllowed: false,
+                        blockedReason: "single_log_filter_evidence_requires_confirmation",
+                        confidence: "medium",
+                        candidates: {},
+                    },
+                    pid: {
+                        writeableAllowed: false,
+                        blockedReason: "single_log_pid_requires_multi_log_confirmation",
+                        confidence: "medium",
+                        candidates: {},
+                    },
+                },
+            },
+        ]);
+
+        expect(aggregate.writeEnvelope.rates.writeableAllowed).toBe(true);
+        expect(aggregate.writeEnvelope.rates.confidence).toBe("high");
+        expect(aggregate.writeEnvelope.rates.candidates.roll_rate).toEqual(
+            expect.objectContaining({
+                suggestedValue: 90,
+                min: 90,
+                max: 95,
+                step: 1,
+            }),
+        );
+    });
+
+    it("downgrades filters to explain-only when usable logs disagree on suggested filter values", () => {
+        const aggregate = aggregateBblAnalyses([
+            {
+                logIndex: 0,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    filters: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "medium",
+                        candidates: {
+                            slider_dterm_filter_multiplier: {
+                                suggestedValue: 92,
+                                min: 92,
+                                max: 95,
+                                step: 1,
+                                reason: "first",
+                                evidenceRefs: ["roll.frequencyDomain.dtermHighFreqAvg"],
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                logIndex: 1,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    filters: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "medium",
+                        candidates: {
+                            slider_dterm_filter_multiplier: {
+                                suggestedValue: 88,
+                                min: 88,
+                                max: 91,
+                                step: 1,
+                                reason: "second",
+                                evidenceRefs: ["pitch.frequencyDomain.dtermHighFreqAvg"],
+                            },
+                        },
+                    },
+                },
+            },
+        ]);
+
+        expect(aggregate.writeEnvelope.filters.writeableAllowed).toBe(false);
+        expect(aggregate.writeEnvelope.filters.blockedReason).toBe("conflicting_candidate_values");
+        expect(aggregate.writeEnvelope.filters.candidates).toEqual({});
+    });
+
+    it("keeps aggregate write envelopes explain-only when aggregate quality is degraded", () => {
+        const aggregate = aggregateBblAnalyses([
+            {
+                logIndex: 0,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    rates: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "medium",
+                        candidates: {
+                            roll_rate: {
+                                suggestedValue: 90,
+                                min: 90,
+                                max: 95,
+                                step: 1,
+                                reason: "same",
+                                evidenceRefs: ["ratesMismatch.roll"],
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                logIndex: 1,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    rates: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "high",
+                        candidates: {
+                            roll_rate: {
+                                suggestedValue: 90,
+                                min: 90,
+                                max: 95,
+                                step: 1,
+                                reason: "same",
+                                evidenceRefs: ["ratesMismatch.roll"],
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                logIndex: 2,
+                quality: { status: "degraded" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    rates: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "medium",
+                        candidates: {
+                            roll_rate: {
+                                suggestedValue: 90,
+                                min: 90,
+                                max: 95,
+                                step: 1,
+                                reason: "same",
+                                evidenceRefs: ["ratesMismatch.roll"],
+                            },
+                        },
+                    },
+                },
+            },
+        ]);
+
+        expect(aggregate.aggregateQuality.status).toBe("degraded");
+        expect(aggregate.writeEnvelope.rates.writeableAllowed).toBe(false);
+        expect(aggregate.writeEnvelope.rates.blockedReason).toBe("aggregate_quality_not_usable");
+        expect(aggregate.writeEnvelope.rates.candidates).toEqual({});
+    });
+
+    it("downgrades aggregate envelopes when candidate metadata differs despite matching suggested values", () => {
+        const aggregate = aggregateBblAnalyses([
+            {
+                logIndex: 0,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    rates: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "medium",
+                        candidates: {
+                            roll_rate: {
+                                suggestedValue: 90,
+                                min: 90,
+                                max: 95,
+                                step: 1,
+                                reason: "first",
+                                evidenceRefs: ["ratesMismatch.roll"],
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                logIndex: 1,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    rates: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "high",
+                        candidates: {
+                            roll_rate: {
+                                suggestedValue: 90,
+                                min: 88,
+                                max: 94,
+                                step: 2,
+                                reason: "second",
+                                evidenceRefs: ["ratesMismatch.roll"],
+                            },
+                        },
+                    },
+                },
+            },
+        ]);
+
+        expect(aggregate.writeEnvelope.rates.writeableAllowed).toBe(false);
+        expect(aggregate.writeEnvelope.rates.blockedReason).toBe("conflicting_candidate_values");
+        expect(aggregate.writeEnvelope.rates.candidates).toEqual({});
+    });
+
+    it("downgrades aggregate envelopes when usable logs disagree on candidate key sets", () => {
+        const aggregate = aggregateBblAnalyses([
+            {
+                logIndex: 0,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    rates: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "medium",
+                        candidates: {
+                            roll_rate: {
+                                suggestedValue: 90,
+                                min: 90,
+                                max: 95,
+                                step: 1,
+                                reason: "first",
+                                evidenceRefs: ["ratesMismatch.roll"],
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                logIndex: 1,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    rates: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "high",
+                        candidates: {
+                            pitch_rate: {
+                                suggestedValue: 88,
+                                min: 88,
+                                max: 92,
+                                step: 1,
+                                reason: "second",
+                                evidenceRefs: ["ratesMismatch.pitch"],
+                            },
+                        },
+                    },
+                },
+            },
+        ]);
+
+        expect(aggregate.writeEnvelope.rates.writeableAllowed).toBe(false);
+        expect(aggregate.writeEnvelope.rates.blockedReason).toBe("conflicting_candidate_values");
+        expect(aggregate.writeEnvelope.rates.candidates).toEqual({});
+    });
 });
