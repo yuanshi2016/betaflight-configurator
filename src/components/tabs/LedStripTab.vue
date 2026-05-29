@@ -1,6 +1,6 @@
 <template>
     <BaseTab tab-name="led-strip" @mounted="onTabMounted">
-        <div class="content_wrapper">
+        <div class="content_wrapper" @keydown.esc="handleEscapeKey">
             <div class="tab_title" v-html="$t('tabLedStrip')"></div>
             <WikiButton doc-url="led-strip" />
 
@@ -256,8 +256,8 @@
                         :class="['color-' + (i - 1), { btnOn: selectedColorIndex === i - 1 }]"
                         :style="{ backgroundColor: getColorStyle(i - 1) }"
                         :title="$t(getColorTitle(i - 1))"
-                        @click="selectColor(i - 1)"
-                        @dblclick="openColorSliders($event)"
+                        @click="handleColorClick(i - 1, $event)"
+                        @dblclick="handleColorDblClick($event)"
                     >
                         {{ i - 1 }}
                     </button>
@@ -333,7 +333,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from "vue";
+import { ref, reactive, computed, watch, onBeforeUnmount } from "vue";
 import BaseTab from "./BaseTab.vue";
 import WikiButton from "../elements/WikiButton.vue";
 import LedGrid from "./led_strip/LedGrid.vue";
@@ -420,6 +420,7 @@ const auxChannelValue = ref("3");
 const colorDefineSliders = ref(null);
 const colorHSV = reactive({ h: 0, s: 0, v: 0 });
 const saveButtonText = ref(i18n.getMessage("ledStripButtonSave"));
+const isColorSlidersOpen = ref(false);
 
 // Sliders
 const brightness = ref(50);
@@ -446,6 +447,27 @@ const showSpecialColors = computed(() => {
     const func = selectedFunction.value;
     return func === "function-g" || func === "function-a" || func === "function-b";
 });
+
+const handleEscapeKey = () => {
+    if (isColorSlidersOpen.value) {
+        closeColorSliders();
+    }
+};
+
+onBeforeUnmount(() => {
+    closeColorSliders();
+});
+
+const handleClickOutside = (event) => {
+    const sliders = colorDefineSliders.value;
+    const colorButton = event.target.closest(".colors > button");
+    if (!sliders || sliders.style.display === "none" || colorButton) {
+        return;
+    }
+    if (!sliders.contains(event.target)) {
+        closeColorSliders();
+    }
+};
 
 // USelect item arrays
 const functionItems = computed(() => [
@@ -871,6 +893,25 @@ function openColorSliders(event) {
         sliders.style.top = `${position.top + 26}px`;
         sliders.style.display = "block";
     }
+    isColorSlidersOpen.value = true;
+}
+
+function closeColorSliders() {
+    const sliders = colorDefineSliders.value;
+    if (sliders) {
+        sliders.style.display = "none";
+    }
+    isColorSlidersOpen.value = false;
+}
+
+function handleColorClick(colorIndex, event) {
+    selectColor(colorIndex);
+    closeColorSliders();
+    event.stopPropagation();
+}
+
+function handleColorDblClick(event) {
+    openColorSliders(event);
 }
 
 // Mode color handlers
@@ -932,6 +973,14 @@ watch(rainbowDelta, (newValue) => {
 
 watch(rainbowFreq, (newValue) => {
     updateLedConfigValue("rainbow_freq", newValue);
+});
+
+watch(isColorSlidersOpen, (newValue) => {
+    if (newValue) {
+        document.addEventListener("mousedown", handleClickOutside);
+    } else {
+        document.removeEventListener("mousedown", handleClickOutside);
+    }
 });
 
 // Save
