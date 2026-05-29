@@ -288,6 +288,59 @@ function summarizeAxisAnalysisLite(axes) {
     return Object.keys(summarized).length ? summarized : undefined;
 }
 
+function summarizeWriteEnvelopeCandidate(candidate) {
+    if (!candidate || typeof candidate !== "object") {
+        return undefined;
+    }
+
+    return Object.fromEntries(
+        Object.entries({
+            suggestedValue: candidate.suggestedValue,
+            min: candidate.min,
+            max: candidate.max,
+            step: candidate.step,
+            reason: trimText(candidate.reason, MAX_NESTED_TEXT_LENGTH),
+            evidenceRefs: Array.isArray(candidate.evidenceRefs)
+                ? candidate.evidenceRefs
+                      .slice(0, MAX_SOURCE_ITEMS)
+                      .map((value) => trimText(String(value), MAX_NESTED_TEXT_LENGTH))
+                      .filter(Boolean)
+                : undefined,
+        }).filter(([, value]) => value !== undefined),
+    );
+}
+
+function summarizeWriteEnvelope(writeEnvelope) {
+    if (!writeEnvelope || typeof writeEnvelope !== "object") {
+        return undefined;
+    }
+
+    const summarized = Object.fromEntries(
+        Object.entries(writeEnvelope)
+            .map(([groupName, envelope]) => {
+                const summary = Object.fromEntries(
+                    Object.entries({
+                        writeableAllowed: envelope?.writeableAllowed,
+                        blockedReason: trimText(envelope?.blockedReason, MAX_NESTED_TEXT_LENGTH),
+                        confidence: envelope?.confidence,
+                        candidates: envelope?.candidates
+                            ? Object.fromEntries(
+                                  Object.entries(envelope.candidates)
+                                      .map(([key, candidate]) => [key, summarizeWriteEnvelopeCandidate(candidate)])
+                                      .filter(([, candidateSummary]) => candidateSummary && Object.keys(candidateSummary).length > 0),
+                              )
+                            : {},
+                    }).filter(([, value]) => value !== undefined),
+                );
+
+                return [groupName, summary];
+            })
+            .filter(([, envelope]) => envelope && Object.keys(envelope).length > 0),
+    );
+
+    return Object.keys(summarized).length ? summarized : undefined;
+}
+
 function summarizeLocalBblAnalysisForLimit(localBblAnalysis) {
     if (!localBblAnalysis || typeof localBblAnalysis !== "object") {
         return null;
@@ -306,6 +359,7 @@ function summarizeLocalBblAnalysisForLimit(localBblAnalysis) {
     const summary = {
         selectedLogIndexes: Array.isArray(localBblAnalysis.selectedLogIndexes) ? [...localBblAnalysis.selectedLogIndexes] : undefined,
         aggregateQuality,
+        writeEnvelope: summarizeWriteEnvelope(localBblAnalysis.writeEnvelope),
         consensusDiagnostics: Array.isArray(localBblAnalysis.consensusDiagnostics)
             ? localBblAnalysis.consensusDiagnostics
                   .slice(0, MAX_LOCAL_ANALYSIS_ITEMS)
@@ -342,6 +396,7 @@ function summarizeLocalBblAnalysis(localBblAnalysis) {
     const summary = {
         selectedLogIndexes: Array.isArray(localBblAnalysis.selectedLogIndexes) ? [...localBblAnalysis.selectedLogIndexes] : undefined,
         aggregateQuality,
+        writeEnvelope: summarizeWriteEnvelope(localBblAnalysis.writeEnvelope),
         consensusDiagnostics: Array.isArray(localBblAnalysis.consensusDiagnostics)
             ? localBblAnalysis.consensusDiagnostics
                   .slice(0, MAX_LOCAL_ANALYSIS_ITEMS)
@@ -427,6 +482,7 @@ function enforcePayloadLimit(payload) {
                 ? {
                       selectedLogIndexes: payload.localAnalysis.selectedLogIndexes,
                       aggregateQuality: payload.localAnalysis.aggregateQuality,
+                      writeEnvelope: payload.localAnalysis.writeEnvelope,
                   }
                 : undefined,
         },
