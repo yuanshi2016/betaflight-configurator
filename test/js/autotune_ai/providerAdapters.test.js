@@ -95,6 +95,40 @@ describe("autotune AI provider adapters", () => {
         expect(body.messages[1].content).toContain("Return exactly this JSON shape");
     });
 
+    it("tells the model to only echo local suggested values from localAnalysis.writeEnvelope", () => {
+        const request = buildProviderRequest(
+            {
+                provider: "deepseek-openai",
+                baseUrl: "https://api.deepseek.com",
+                model: "deepseek-v4-pro",
+                apiKey: "secret-key",
+            },
+            {
+                ...payload,
+                localAnalysis: {
+                    writeEnvelope: {
+                        rates: {
+                            writeableAllowed: true,
+                            confidence: "high",
+                            blockedReason: null,
+                            candidates: {
+                                roll_rate: { suggestedValue: 90, min: 90, max: 95, step: 1, reason: "runtime low usage" },
+                            },
+                        },
+                    },
+                },
+            },
+            null,
+            { locale: "en" },
+        );
+        const body = JSON.parse(request.options.body);
+
+        expect(body.messages[0].content).toContain("Use localAnalysis.writeEnvelope as the only source of writeable values.");
+        expect(body.messages[0].content).toContain("If you return a value, it must match the candidate suggestedValue exactly.");
+        expect(body.messages[1].content).toContain("Only use keys and suggested values that already exist in localAnalysis.writeEnvelope.");
+        expect(body.messages[1].content).toContain("Do not invent keys or values, and do not interpolate inside min/max.");
+    });
+
     it("keeps temperature when DeepSeek OpenAI-compatible thinking mode is disabled", () => {
         const request = buildProviderRequest(
             {
