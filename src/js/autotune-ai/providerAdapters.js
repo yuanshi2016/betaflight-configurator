@@ -78,6 +78,9 @@ function createSystemPrompt(locale) {
         "Do not return error fields or diagnostics/recommendations arrays.",
         "Only set writeable=true when localAnalysis provides enough concrete evidence for a specific safe config change.",
         "If localAnalysis only provides direction-only or qualitative evidence, keep writeable=false and explain the limitation.",
+        "Use localAnalysis.writeEnvelope as the only source of writeable values.",
+        "If localAnalysis.writeEnvelope.<group>.writeableAllowed is false, keep that group non-writeable and explain the limitation.",
+        "If you return a value, it must match the candidate suggestedValue exactly.",
         `Respond in ${responseLanguage}.`,
         `Keep all user-facing summary, explanations, and flight test notes in ${responseLanguage}.`,
         "For initial analysis, return only JSON matching the requested response contract.",
@@ -96,6 +99,8 @@ function createUserPrompt(payload, locale) {
         `Analyze this compact Betaflight tuning payload and return JSON with summary, overallRisk, groups.pid, groups.filters, groups.rates, and flightTestNotes. Respond in ${responseLanguage}.`,
         "Return exactly this JSON shape:",
         RESPONSE_CONTRACT,
+        "Only use keys and suggested values that already exist in localAnalysis.writeEnvelope.",
+        "Do not invent keys or values, and do not interpolate inside min/max.",
         JSON.stringify(payload),
     ].join("\n\n");
 }

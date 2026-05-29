@@ -239,4 +239,65 @@ describe("autotune AI dock styles", () => {
         expect(component).toContain("if (needsRcTuning && !FC.RC_TUNING)");
         expect(component).not.toContain("if (!FC.TUNING_SLIDERS || !FC.RC_TUNING)");
     });
+
+    it("renders local write-envelope and effective-plan sections separately from the raw ai response", () => {
+        const component = readFileSync("src/components/tabs/autotune/AiAdvisor.vue", "utf8");
+        const englishMessages = readFileSync("locales/en/messages.json", "utf8");
+        const chineseMessages = readFileSync("locales/zh_CN/messages.json", "utf8");
+        const traditionalChineseMessages = readFileSync("locales/zh_TW/messages.json", "utf8");
+
+        expect(component).toContain("localWriteEnvelopeGroups");
+        expect(component).toContain("effectivePlanGroups");
+        expect(component).toContain("autotuneAiLocalWriteEnvelope");
+        expect(component).toContain("autotuneAiGuardedPlan");
+        expect(component).toContain("autotuneAiLocalCandidates");
+        expect(component).toContain("autotuneAiAcceptedByLocalGuard");
+        expect(component).toContain("autotuneAiRejectedByLocalGuard");
+        expect(component).toContain("sessionState.localWriteEnvelope");
+        expect(component).toContain("sessionState.effectivePlan");
+
+        expect(englishMessages).toContain("autotuneAiLocalWriteEnvelope");
+        expect(englishMessages).toContain("autotuneAiGuardedPlan");
+        expect(englishMessages).toContain("autotuneAiLocalCandidates");
+        expect(englishMessages).toContain("autotuneAiAcceptedByLocalGuard");
+        expect(englishMessages).toContain("autotuneAiRejectedByLocalGuard");
+        expect(englishMessages).toContain("autotuneAiExplainOnly");
+
+        expect(chineseMessages).toContain("autotuneAiLocalWriteEnvelope");
+        expect(chineseMessages).toContain("autotuneAiGuardedPlan");
+        expect(chineseMessages).toContain("autotuneAiLocalCandidates");
+        expect(chineseMessages).toContain("autotuneAiAcceptedByLocalGuard");
+        expect(chineseMessages).toContain("autotuneAiRejectedByLocalGuard");
+        expect(chineseMessages).toContain("autotuneAiExplainOnly");
+
+        expect(traditionalChineseMessages).toContain("autotuneAiLocalWriteEnvelope");
+        expect(traditionalChineseMessages).toContain("autotuneAiGuardedPlan");
+        expect(traditionalChineseMessages).toContain("autotuneAiLocalCandidates");
+        expect(traditionalChineseMessages).toContain("autotuneAiAcceptedByLocalGuard");
+        expect(traditionalChineseMessages).toContain("autotuneAiRejectedByLocalGuard");
+        expect(traditionalChineseMessages).toContain("autotuneAiExplainOnly");
+    });
+
+    it("routes FC writes through the effective plan instead of the raw ai response", () => {
+        const component = readFileSync("src/components/tabs/autotune/AiAdvisor.vue", "utf8");
+        const writePath = component.slice(
+            component.indexOf("const canWrite = computed"),
+            component.indexOf("async function runAnalysis"),
+        );
+        const effectivePlanSection = component.slice(
+            component.indexOf('v-if="sessionState.effectivePlan"'),
+            component.indexOf('<section class="autotune-ai-section">', component.indexOf('v-if="sessionState.effectivePlan"') + 1),
+        );
+        const rawAiSection = component.slice(
+            component.indexOf('v-if="sessionState.aiResponse"'),
+            component.indexOf('v-else class="rounded border border-neutral-500/30 p-3 text-sm text-dimmed"'),
+        );
+
+        expect(writePath).toContain("effectivePlanGroups.value");
+        expect(writePath).toContain("sessionState.effectivePlan?.groups?.[groupKey]");
+        expect(writePath).not.toContain("recommendationGroups.value");
+        expect(writePath).not.toContain("sessionState.aiResponse?.groups?.[groupKey]");
+        expect(effectivePlanSection).toContain('@click="writeGroup(group.key)"');
+        expect(rawAiSection).not.toContain('@click="writeGroup(group.key)"');
+    });
 });

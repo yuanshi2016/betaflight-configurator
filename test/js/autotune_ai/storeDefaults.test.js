@@ -161,6 +161,15 @@ describe("autotune AI store defaults", () => {
         expect(storeSource).toContain("localBblAnalysis: sessionState.localBblAnalysis");
     });
 
+    it("tracks local write envelopes and the reconciled effective plan", () => {
+        const storeSource = readFileSync("src/stores/autotuneAi.js", "utf8");
+
+        expect(storeSource).toContain("localWriteEnvelope");
+        expect(storeSource).toContain("effectivePlan");
+        expect(storeSource).toContain("sessionState.localWriteEnvelope");
+        expect(storeSource).toContain("sessionState.effectivePlan");
+    });
+
     it("defaults local bbl analysis state to empty values", () => {
         expect(defaultSessionState()).toMatchObject({
             selectedBblLogIndexes: [],
@@ -169,15 +178,28 @@ describe("autotune AI store defaults", () => {
         });
     });
 
+    it("defaults local write envelope and effective plan state to empty values", () => {
+        expect(defaultSessionState()).toMatchObject({
+            localWriteEnvelope: null,
+            effectivePlan: null,
+        });
+    });
+
     it("clears stale persisted local bbl analysis when no valid bbl is loaded", () => {
         sessionStorage.setItem(
             "AutotuneAiPanelState",
             JSON.stringify({
                 AutotuneAiPanelState: {
+                    sourceType: "bbl",
                     bblSummary: null,
                     selectedBblLogIndexes: [1, 2],
                     localBblAnalysesByLog: { 1: { logIndex: 1 } },
                     localBblAnalysis: { selectedLogIndexes: [1, 2] },
+                    localWriteEnvelope: { rates: { writeableAllowed: true } },
+                    effectivePlan: { groups: { rates: { writeable: true, values: { roll_rate: 90 } } } },
+                    aiResponse: { summary: "stale" },
+                    lastPayload: { sourceSummary: { hasBbl: true } },
+                    conversationHistory: [{ role: "assistant", content: "stale" }],
                 },
             }),
         );
@@ -188,6 +210,50 @@ describe("autotune AI store defaults", () => {
         expect(store.sessionState.selectedBblLogIndexes).toEqual([]);
         expect(store.sessionState.localBblAnalysesByLog).toEqual({});
         expect(store.sessionState.localBblAnalysis).toBeNull();
+        expect(store.sessionState.localWriteEnvelope).toBeNull();
+        expect(store.sessionState.effectivePlan).toBeNull();
+        expect(store.sessionState.aiResponse).toBeNull();
+        expect(store.sessionState.lastPayload).toBeNull();
+        expect(store.sessionState.conversationHistory).toEqual([]);
+    });
+
+    it("clears stale persisted bbl-backed ai state when only bbl metadata survives a reload", () => {
+        sessionStorage.setItem(
+            "AutotuneAiPanelState",
+            JSON.stringify({
+                AutotuneAiPanelState: {
+                    sourceType: "bbl",
+                    sourceFileName: "logs.bbl",
+                    bblSummary: createBblSummary(),
+                    bblFileData: {
+                        fileName: "logs.bbl",
+                        retainedInMemory: true,
+                        byteLength: 3,
+                    },
+                    selectedBblLogIndexes: [0],
+                    localBblAnalysesByLog: { 0: { logIndex: 0 } },
+                    localBblAnalysis: { selectedLogIndexes: [0] },
+                    localWriteEnvelope: { rates: { writeableAllowed: true } },
+                    effectivePlan: { groups: { rates: { writeable: true, values: { roll_rate: 90 } } } },
+                    aiResponse: { summary: "stale" },
+                    lastPayload: { sourceSummary: { hasBbl: true } },
+                    conversationHistory: [{ role: "assistant", content: "stale" }],
+                },
+            }),
+        );
+
+        const store = useAutotuneAiStore();
+
+        expect(store.sessionState.bblSummary).toBeNull();
+        expect(store.sessionState.bblFileData).toBeNull();
+        expect(store.sessionState.selectedBblLogIndexes).toEqual([]);
+        expect(store.sessionState.localBblAnalysesByLog).toEqual({});
+        expect(store.sessionState.localBblAnalysis).toBeNull();
+        expect(store.sessionState.localWriteEnvelope).toBeNull();
+        expect(store.sessionState.effectivePlan).toBeNull();
+        expect(store.sessionState.aiResponse).toBeNull();
+        expect(store.sessionState.lastPayload).toBeNull();
+        expect(store.sessionState.conversationHistory).toEqual([]);
     });
 
     it("refreshes local analysis with true per-log summaries for each selected log", async () => {
@@ -484,6 +550,7 @@ describe("autotune AI store defaults", () => {
             { role: "user", content: firstTurn },
             { role: "assistant", content: assistantReply },
         ];
+        store.sessionState.lastPayload = { sourceSummary: { hasBbl: false } };
         store.sessionState.followUpInput = "Need more detail";
 
         await store.sendFollowUp();
@@ -629,6 +696,249 @@ describe("autotune AI store defaults", () => {
                 },
             }),
         );
+    });
+
+    it("stores the local write envelope and effective plan after a successful ai analysis", async () => {
+        const store = useAutotuneAiStore();
+        const localWriteEnvelope = {
+            rates: {
+                writeableAllowed: true,
+                blockedReason: "",
+                confidence: "high",
+                candidates: {
+                    roll_rate: {
+                        suggestedValue: 90,
+                        min: 90,
+                        max: 95,
+                        step: 1,
+                        reason: "runtime low usage",
+                    },
+                },
+            },
+        };
+        const effectivePlan = {
+            groups: {
+                rates: {
+                    writeable: true,
+                    confidence: "high",
+                    explanation: "Use the local rate rollback.",
+                    values: { roll_rate: 90 },
+                },
+            },
+        };
+
+        Object.assign(store.craftContext, {
+            craftType: "long-range",
+            frameSize: "8",
+            allUpWeight: "2000",
+            prop: "8x3.7x3",
+            motorKv: "1100",
+            battery: "6S",
+            flightStyle: "smooth",
+            riskPreference: "balanced",
+        });
+        store.providerSettings.apiKey = "secret";
+        store.sessionState.localBblAnalysis = {
+            aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" },
+            writeEnvelope: localWriteEnvelope,
+        };
+        store.sessionState.bblSummary = createBblSummary();
+        mockBuildAiPayload.mockReturnValue({
+            sourceSummary: { hasBbl: true },
+            localAnalysis: store.sessionState.localBblAnalysis,
+        });
+        mockExplainTuningAnalysis.mockResolvedValue(
+            JSON.stringify({
+                summary: "ok",
+                overallRisk: "medium",
+                groups: effectivePlan.groups,
+                flightTestNotes: "test hover",
+            }),
+        );
+        mockParseAiResponse.mockReturnValue({
+            summary: "ok",
+            overallRisk: "medium",
+            groups: effectivePlan.groups,
+            effectivePlan,
+            flightTestNotes: "test hover",
+        });
+
+        await store.analyze();
+
+        expect(store.sessionState.localWriteEnvelope).toEqual(localWriteEnvelope);
+        expect(store.sessionState.effectivePlan).toEqual(effectivePlan);
+    });
+
+    it("preserves the local write envelope and refreshes effective plan on structured follow-up updates", async () => {
+        const store = useAutotuneAiStore();
+        const localWriteEnvelope = {
+            rates: {
+                writeableAllowed: true,
+                blockedReason: "",
+                confidence: "high",
+                candidates: {
+                    roll_rate: {
+                        suggestedValue: 90,
+                        min: 90,
+                        max: 95,
+                        step: 1,
+                        reason: "runtime low usage",
+                    },
+                },
+            },
+        };
+        const previousEffectivePlan = {
+            groups: {
+                rates: {
+                    writeable: true,
+                    confidence: "medium",
+                    explanation: "Previous plan.",
+                    values: { roll_rate: 92 },
+                },
+            },
+        };
+        const updatedEffectivePlan = {
+            groups: {
+                rates: {
+                    writeable: true,
+                    confidence: "high",
+                    explanation: "Use the local rate rollback.",
+                    values: { roll_rate: 90 },
+                },
+            },
+        };
+
+        store.sessionState.lastPayload = {
+            sourceSummary: { hasBbl: true },
+            localAnalysis: {
+                aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" },
+                writeEnvelope: localWriteEnvelope,
+            },
+        };
+        store.sessionState.localWriteEnvelope = localWriteEnvelope;
+        store.sessionState.effectivePlan = previousEffectivePlan;
+        store.sessionState.aiResponse = {
+            summary: "previous",
+            overallRisk: "medium",
+            groups: previousEffectivePlan.groups,
+            effectivePlan: previousEffectivePlan,
+            flightTestNotes: "previous note",
+        };
+        store.sessionState.conversationHistory = [
+            { role: "user", content: "Initial analysis payload." },
+            { role: "assistant", content: "{\"summary\":\"previous\"}" },
+        ];
+        store.sessionState.followUpInput = "Can you tighten the rates recommendation?";
+
+        mockExplainTuningAnalysis.mockResolvedValueOnce(
+            JSON.stringify({
+                summary: "updated",
+                overallRisk: "medium",
+                groups: updatedEffectivePlan.groups,
+                flightTestNotes: "test hover",
+            }),
+        );
+        mockParseAiResponse.mockReturnValueOnce({
+            summary: "updated",
+            overallRisk: "medium",
+            groups: updatedEffectivePlan.groups,
+            effectivePlan: updatedEffectivePlan,
+            flightTestNotes: "test hover",
+        });
+
+        await store.sendFollowUp();
+
+        expect(store.sessionState.localWriteEnvelope).toEqual(localWriteEnvelope);
+        expect(store.sessionState.effectivePlan).toEqual(updatedEffectivePlan);
+    });
+
+    it("clears the effective plan when a structured follow-up parse omits it", async () => {
+        const store = useAutotuneAiStore();
+        const localWriteEnvelope = {
+            rates: {
+                writeableAllowed: true,
+                blockedReason: "",
+                confidence: "high",
+                candidates: {
+                    roll_rate: {
+                        suggestedValue: 90,
+                        min: 90,
+                        max: 95,
+                        step: 1,
+                        reason: "runtime low usage",
+                    },
+                },
+            },
+        };
+        const previousEffectivePlan = {
+            groups: {
+                rates: {
+                    writeable: true,
+                    confidence: "medium",
+                    explanation: "Previous plan.",
+                    values: { roll_rate: 92 },
+                },
+            },
+        };
+
+        store.sessionState.lastPayload = {
+            sourceSummary: { hasBbl: true },
+            localAnalysis: {
+                aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" },
+                writeEnvelope: localWriteEnvelope,
+            },
+        };
+        store.sessionState.localWriteEnvelope = localWriteEnvelope;
+        store.sessionState.effectivePlan = previousEffectivePlan;
+        store.sessionState.aiResponse = {
+            summary: "previous",
+            overallRisk: "medium",
+            groups: previousEffectivePlan.groups,
+            effectivePlan: previousEffectivePlan,
+            flightTestNotes: "previous note",
+        };
+        store.sessionState.conversationHistory = [
+            { role: "user", content: "Initial analysis payload." },
+            { role: "assistant", content: "{\"summary\":\"previous\"}" },
+        ];
+        store.sessionState.followUpInput = "What if we keep it explain-only?";
+
+        mockExplainTuningAnalysis.mockResolvedValueOnce(
+            JSON.stringify({
+                summary: "updated",
+                overallRisk: "medium",
+                groups: previousEffectivePlan.groups,
+                flightTestNotes: "test hover",
+            }),
+        );
+        mockParseAiResponse.mockReturnValueOnce({
+            summary: "updated",
+            overallRisk: "medium",
+            groups: previousEffectivePlan.groups,
+            flightTestNotes: "test hover",
+        });
+
+        await store.sendFollowUp();
+
+        expect(store.sessionState.localWriteEnvelope).toEqual(localWriteEnvelope);
+        expect(store.sessionState.effectivePlan).toBeNull();
+    });
+
+    it("does not send a follow-up without a lastPayload context", async () => {
+        const store = useAutotuneAiStore();
+        store.sessionState.lastPayload = null;
+        store.sessionState.conversationHistory = [
+            { role: "user", content: "Initial analysis payload." },
+            { role: "assistant", content: "{\"summary\":\"previous\"}" },
+        ];
+        store.sessionState.followUpInput = "Need more detail";
+
+        await expect(store.sendFollowUp()).resolves.toBeNull();
+        expect(mockExplainTuningAnalysis).not.toHaveBeenCalled();
+        expect(store.sessionState.conversationHistory).toEqual([
+            { role: "user", content: "Initial analysis payload." },
+            { role: "assistant", content: "{\"summary\":\"previous\"}" },
+        ]);
     });
 
     it("blocks AI requests before sending when local bbl analysis quality is degraded", async () => {

@@ -19,6 +19,7 @@ const MIN_FFT_SAMPLES = 64;
 const MIN_MOVING_SETPOINT = 20;
 const MAX_STEADY_SETPOINT = 5;
 const MIN_VALID_DT_US = 10;
+const MAX_RATES_SINGLE_DELTA = 10;
 
 const THRESHOLDS_BY_CRAFT_CLASS = {
     "1-4in": {
@@ -240,6 +241,59 @@ export function detectRatesMismatch(summary = {}, craftContext = {}, staticConfi
             },
         },
     ];
+}
+
+function buildRatesCandidate(currentValue, recommendedMax) {
+    const overshoot = currentValue - recommendedMax;
+    const delta = Math.min(MAX_RATES_SINGLE_DELTA, Math.max(1, Math.floor(overshoot / 2)));
+    const suggestedValue = Math.round(currentValue - delta);
+
+    return {
+        suggestedValue,
+        min: suggestedValue,
+        max: Math.max(suggestedValue, currentValue - 5),
+        step: 1,
+    };
+}
+
+function buildRatesWriteEnvelope(summary = {}, craftContext = {}, staticConfig = {}, quality = classifyLogQuality(summary)) {
+    if (quality?.status !== QUALITY_STATUS.USABLE) {
+        return {
+            writeableAllowed: false,
+            blockedReason: "insufficient_rates_evidence",
+            confidence: "low",
+            candidates: {},
+        };
+    }
+
+    const diagnostics = detectRatesMismatch(summary, craftContext, staticConfig);
+    if (!diagnostics.length) {
+        return {
+            writeableAllowed: false,
+            blockedReason: "no_rates_mismatch_detected",
+            confidence: "low",
+            candidates: {},
+        };
+    }
+
+    const exceededAxes = diagnostics[0].evidence.exceededAxes || [];
+    const candidates = Object.fromEntries(
+        exceededAxes.map(({ axis, configured, recommendedMax }) => [
+            `${axis}_rate`,
+            {
+                ...buildRatesCandidate(configured, recommendedMax),
+                reason: "runtime usage is low and configured rate exceeds the craft profile limit",
+                evidenceRefs: [`ratesMismatch.${axis}`],
+            },
+        ]),
+    );
+
+    return {
+        writeableAllowed: Object.keys(candidates).length > 0,
+        blockedReason: "",
+        confidence: diagnostics[0].confidence || "medium",
+        candidates,
+    };
 }
 
 function getCraftClass(craftContext = {}, analysisInput = {}) {
@@ -547,6 +601,60 @@ function analyzeAxes(analysisInput, craftContext) {
     return { axes, diagnostics };
 }
 
+function hasHighConfidenceMotorImbalance(diagnostics = []) {
+    return diagnostics.some((diagnostic) => diagnostic.type === "motor_output_imbalance" && diagnostic.confidence === "high");
+}
+
+function buildFiltersWriteEnvelope({ quality, axes } = {}) {
+    const hasUsableFft = Object.values(axes || {}).some((axis) => axis?.frequencyDomain?.fftUsable === true);
+    const hasFilterAdvice = Object.values(axes || {}).some(
+        (axis) => axis?.filterAdvice?.gyroNotch?.direction === "enable" || axis?.filterAdvice?.dtermLowpass?.direction === "lower",
+    );
+
+    if (quality?.status !== QUALITY_STATUS.USABLE || !hasUsableFft || !hasFilterAdvice) {
+        return {
+            writeableAllowed: false,
+            blockedReason: "insufficient_filter_evidence",
+            confidence: "low",
+            candidates: {},
+        };
+    }
+
+    return {
+        writeableAllowed: false,
+        blockedReason: "single_log_filter_evidence_requires_confirmation",
+        confidence: "medium",
+        candidates: {},
+    };
+}
+
+function buildPidWriteEnvelope({ quality, diagnostics } = {}) {
+    if (quality?.status !== QUALITY_STATUS.USABLE) {
+        return {
+            writeableAllowed: false,
+            blockedReason: "insufficient_pid_evidence",
+            confidence: "low",
+            candidates: {},
+        };
+    }
+
+    if (hasHighConfidenceMotorImbalance(diagnostics)) {
+        return {
+            writeableAllowed: false,
+            blockedReason: "mechanical_imbalance_detected",
+            confidence: "high",
+            candidates: {},
+        };
+    }
+
+    return {
+        writeableAllowed: false,
+        blockedReason: "single_log_pid_requires_multi_log_confirmation",
+        confidence: "medium",
+        candidates: {},
+    };
+}
+
 export function buildRecommendations({ diagnostics = [], craftContext = {}, staticConfig = {}, quality = {}, axes = {} } = {}) {
     const recommendations = [];
 
@@ -640,13 +748,22 @@ export function analyzeBblLog({ summary, craftContext = {}, staticConfig = {} } 
 
     if (quality.status !== QUALITY_STATUS.UNUSABLE) {
         diagnostics.push(...detectMotorImbalance(summary));
-        diagnostics.push(...detectRatesMismatch(summary, craftContext, staticConfig));
+        if (quality.status === QUALITY_STATUS.USABLE) {
+            diagnostics.push(...detectRatesMismatch(summary, craftContext, staticConfig));
+        }
     }
+
+    const writeEnvelope = {
+        rates: buildRatesWriteEnvelope(summary, craftContext, staticConfig, quality),
+        filters: buildFiltersWriteEnvelope({ quality, axes }),
+        pid: buildPidWriteEnvelope({ quality, diagnostics }),
+    };
 
     return {
         quality,
         axes,
         diagnostics,
+        writeEnvelope,
         recommendations: buildRecommendations({ diagnostics, craftContext, staticConfig, quality, axes }),
         evidenceSummary: buildEvidenceSummary({ quality, diagnostics, axes }),
     };

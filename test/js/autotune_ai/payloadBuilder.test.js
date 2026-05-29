@@ -273,6 +273,46 @@ describe("autotune AI payload builder", () => {
         expect(payload.localAnalysis.aggregateRecommendations[0].configSnapshot.recentAdjustments).toHaveLength(4);
     });
 
+    it("includes the aggregate write envelope in the compact AI payload", () => {
+        const payload = buildAiPayload({
+            localBblAnalysis: {
+                aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" },
+                writeEnvelope: {
+                    rates: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "high",
+                        candidates: {
+                            roll_rate: {
+                                suggestedValue: 90,
+                                min: 90,
+                                max: 95,
+                                step: 1,
+                                reason: "runtime low usage",
+                                evidenceRefs: ["ratesMismatch.roll"],
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        expect(payload.localAnalysis.writeEnvelope.rates).toEqual(
+            expect.objectContaining({
+                writeableAllowed: true,
+                confidence: "high",
+            }),
+        );
+        expect(payload.localAnalysis.writeEnvelope.rates.candidates.roll_rate).toEqual(
+            expect.objectContaining({
+                suggestedValue: 90,
+                min: 90,
+                max: 95,
+                step: 1,
+            }),
+        );
+    });
+
     it("enforces the payload size limit by compacting local analysis before returning", () => {
         const hugeText = repeatText("oversized-", 6000);
         const payload = buildAiPayload({
@@ -380,6 +420,72 @@ describe("autotune AI payload builder", () => {
         );
         expect(payload.inputSources.cli.summary).toBeUndefined();
         expect(payload.inputSources.bbl.summary).toBeUndefined();
+    });
+
+    it("preserves writeEnvelope while dropping bulky source summaries during payload compaction", () => {
+        const hugeText = repeatText("oversized-", 6000);
+        const payload = buildAiPayload({
+            cliSummary: { notes: hugeText.repeat(2) },
+            csvSummary: { notes: hugeText.repeat(2) },
+            bblSummary: { notes: hugeText.repeat(2) },
+            localBblAnalysis: {
+                aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" },
+                consensusDiagnostics: Array.from({ length: 10 }, (_, index) => ({
+                    type: `diag-${index}`,
+                    confidence: "high",
+                    explanation: hugeText,
+                })),
+                conflictingDiagnostics: Array.from({ length: 10 }, (_, index) => ({
+                    type: `conflict-${index}`,
+                    confidence: "medium",
+                    conflict: "mixed",
+                    explanation: hugeText,
+                    sources: ["a", "b", "c", "d", "e", hugeText],
+                })),
+                aggregateRecommendations: Array.from({ length: 10 }, (_, index) => ({
+                    type: `recommendation-${index}`,
+                    group: "rates",
+                    priority: "high",
+                    actionability: "config_review",
+                    explanation: hugeText,
+                    configSnapshot: {
+                        profile: index,
+                        detail: hugeText,
+                    },
+                })),
+                writeEnvelope: {
+                    rates: {
+                        writeableAllowed: true,
+                        blockedReason: "",
+                        confidence: "high",
+                        candidates: {
+                            roll_rate: {
+                                suggestedValue: 90,
+                                min: 90,
+                                max: 95,
+                                step: 1,
+                                reason: hugeText,
+                                evidenceRefs: ["ratesMismatch.roll", hugeText, "extra-ref-1", "extra-ref-2", "extra-ref-3"],
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        expect(JSON.stringify(payload).length).toBeLessThanOrEqual(20 * 1024);
+        expect(payload.inputSources.cli.summary).toBeUndefined();
+        expect(payload.inputSources.csv.summary).toBeUndefined();
+        expect(payload.inputSources.bbl.summary).toBeUndefined();
+        expect(payload.localAnalysis.writeEnvelope.rates.candidates.roll_rate.suggestedValue).toBe(90);
+        expect(payload.localAnalysis.writeEnvelope.rates.candidates.roll_rate.evidenceRefs).toEqual([
+            "ratesMismatch.roll",
+            expect.any(String),
+            "extra-ref-1",
+            "extra-ref-2",
+        ]);
+        expect(payload.localAnalysis.writeEnvelope.rates.candidates.roll_rate.evidenceRefs).toHaveLength(4);
+        expect(payload.localAnalysis.writeEnvelope.rates.candidates.roll_rate.evidenceRefs[1].length).toBeLessThanOrEqual(120);
     });
 
     it("keeps lightweight local analysis evidence before falling back to quality-only compaction", () => {

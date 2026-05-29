@@ -278,6 +278,222 @@ describe("autotune AI ordinary BBL analysis", () => {
         expect(result.diagnostics.find((item) => item.type === "rates_mismatch")).toBeUndefined();
     });
 
+    it("builds a conservative rates write envelope when low-usage legacy rates exceed the craft profile limits", () => {
+        const result = analyzeBblLog({
+            summary: {
+                samples: { decodedMainFrames: 1400, corruptFrames: 0, unsupportedEncodedFrames: 0, durationUs: 8_000_000 },
+                fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true } },
+                fieldStats: {
+                    setpoint: {
+                        0: { mean: 4, rms: 18, max: 50 },
+                        1: { mean: 3, rms: 16, max: 46 },
+                        2: { mean: 2, rms: 14, max: 40 },
+                    },
+                    motor: {
+                        0: { mean: 1500, rms: 1510, max: 1700, count: 1400 },
+                        1: { mean: 1498, rms: 1508, max: 1690, count: 1400 },
+                        2: { mean: 1502, rms: 1512, max: 1710, count: 1400 },
+                        3: { mean: 1499, rms: 1509, max: 1695, count: 1400 },
+                    },
+                },
+            },
+            craftContext: { craftType: "long-range", flightStyle: "smooth-cruise" },
+            staticConfig: {
+                rates: {
+                    rates_type: 0,
+                    roll_rate: 100,
+                    pitch_rate: 96,
+                    yaw_rate: 72,
+                },
+            },
+        });
+
+        expect(result.writeEnvelope.rates.writeableAllowed).toBe(true);
+        expect(result.writeEnvelope.rates.candidates.roll_rate).toEqual(
+            expect.objectContaining({
+                suggestedValue: 90,
+                min: 90,
+                max: 95,
+                step: 1,
+            }),
+        );
+        expect(result.writeEnvelope.rates.candidates.pitch_rate).toEqual(
+            expect.objectContaining({
+                suggestedValue: 88,
+            }),
+        );
+        expect(result.writeEnvelope.rates.candidates.yaw_rate).toEqual(
+            expect.objectContaining({
+                suggestedValue: 69,
+            }),
+        );
+    });
+
+    it("does not allow rate writes for degraded or unusable logs", () => {
+        const degradedResult = analyzeBblLog({
+            summary: {
+                samples: { decodedMainFrames: 1400, corruptFrames: 2, unsupportedEncodedFrames: 0, durationUs: 8_000_000 },
+                fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true } },
+                fieldStats: {
+                    setpoint: {
+                        0: { mean: 4, rms: 18, max: 50 },
+                        1: { mean: 3, rms: 16, max: 46 },
+                        2: { mean: 2, rms: 14, max: 40 },
+                    },
+                    motor: {
+                        0: { mean: 1500, rms: 1510, max: 1700, count: 1400 },
+                        1: { mean: 1498, rms: 1508, max: 1690, count: 1400 },
+                        2: { mean: 1502, rms: 1512, max: 1710, count: 1400 },
+                        3: { mean: 1499, rms: 1509, max: 1695, count: 1400 },
+                    },
+                },
+            },
+            craftContext: { craftType: "long-range", flightStyle: "smooth-cruise" },
+            staticConfig: {
+                rates: {
+                    rates_type: 0,
+                    roll_rate: 100,
+                    pitch_rate: 96,
+                    yaw_rate: 72,
+                },
+            },
+        });
+
+        const unusableResult = analyzeBblLog({
+            summary: {
+                samples: { decodedMainFrames: 80, corruptFrames: 0, unsupportedEncodedFrames: 0, durationUs: 150_000 },
+                fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true } },
+                fieldStats: {
+                    setpoint: {
+                        0: { mean: 4, rms: 18, max: 50 },
+                        1: { mean: 3, rms: 16, max: 46 },
+                        2: { mean: 2, rms: 14, max: 40 },
+                    },
+                    motor: {
+                        0: { mean: 1500, rms: 1510, max: 1700, count: 80 },
+                        1: { mean: 1498, rms: 1508, max: 1690, count: 80 },
+                        2: { mean: 1502, rms: 1512, max: 1710, count: 80 },
+                        3: { mean: 1499, rms: 1509, max: 1695, count: 80 },
+                    },
+                },
+            },
+            craftContext: { craftType: "long-range", flightStyle: "smooth-cruise" },
+            staticConfig: {
+                rates: {
+                    rates_type: 0,
+                    roll_rate: 100,
+                    pitch_rate: 96,
+                    yaw_rate: 72,
+                },
+            },
+        });
+
+        expect(degradedResult.quality.status).toBe("degraded");
+        expect(degradedResult.writeEnvelope.rates.writeableAllowed).toBe(false);
+        expect(degradedResult.diagnostics.find((item) => item.type === "rates_mismatch")).toBeUndefined();
+        expect(degradedResult.recommendations.find((item) => item.type === "review_rates_profile")).toBeUndefined();
+        expect(unusableResult.quality.status).toBe("unusable");
+        expect(unusableResult.writeEnvelope.rates.writeableAllowed).toBe(false);
+        expect(unusableResult.diagnostics.find((item) => item.type === "rates_mismatch")).toBeUndefined();
+        expect(unusableResult.recommendations.find((item) => item.type === "review_rates_profile")).toBeUndefined();
+    });
+
+    it("keeps filter writes explain-only for a single usable log even when fft evidence exists", () => {
+        const result = analyzeBblLog({
+            summary: {
+                samples: { decodedMainFrames: 1400, corruptFrames: 0, unsupportedEncodedFrames: 0, durationUs: 8_000_000 },
+                fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true } },
+                analysisInput: {
+                    axes: {
+                        roll: {
+                            timeUs: Array.from({ length: 128 }, (_, index) => index * 500),
+                            gyro: Array.from({ length: 128 }, (_, index) => Math.sin(index / 4) * 60),
+                            setpoint: Array.from({ length: 128 }, () => 0),
+                            dterm: Array.from({ length: 128 }, (_, index) => Math.sin(index / 3) * 20),
+                        },
+                    },
+                },
+            },
+            craftContext: { craftType: "freestyle", frameSize: "5寸" },
+            staticConfig: { rates: { rates_type: 0 } },
+        });
+
+        expect(result.writeEnvelope.filters.writeableAllowed).toBe(false);
+        expect(result.writeEnvelope.filters.blockedReason).toBe("single_log_filter_evidence_requires_confirmation");
+    });
+
+    it("blocks pid writes when high-confidence motor imbalance is present", () => {
+        const result = analyzeBblLog({
+            summary: {
+                samples: { decodedMainFrames: 1400, corruptFrames: 0, unsupportedEncodedFrames: 0, durationUs: 8_000_000 },
+                fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true } },
+                fieldStats: {
+                    motor: {
+                        0: { mean: 1600, rms: 1610, max: 1800, count: 1400 },
+                        1: { mean: 1595, rms: 1605, max: 1790, count: 1400 },
+                        2: { mean: 1430, rms: 1440, max: 1630, count: 1400 },
+                        3: { mean: 1425, rms: 1435, max: 1625, count: 1400 },
+                    },
+                },
+                analysisInput: {
+                    axes: {
+                        roll: {
+                            timeUs: Array.from({ length: 128 }, (_, index) => index * 500),
+                            gyro: Array.from({ length: 128 }, () => 0),
+                            setpoint: Array.from({ length: 128 }, () => 35),
+                        },
+                    },
+                },
+            },
+            craftContext: { craftType: "freestyle", frameSize: "5寸" },
+            staticConfig: { rates: { rates_type: 0 } },
+        });
+
+        expect(result.writeEnvelope.pid.writeableAllowed).toBe(false);
+        expect(result.writeEnvelope.pid.blockedReason).toBe("mechanical_imbalance_detected");
+    });
+
+    it("keeps rates write envelopes explain-only when the log quality is degraded", () => {
+        const result = analyzeBblLog({
+            summary: {
+                samples: {
+                    decodedMainFrames: 1400,
+                    corruptFrames: 2,
+                    unsupportedEncodedFrames: 1,
+                    durationUs: 8_000_000,
+                },
+                fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true } },
+                fieldStats: {
+                    setpoint: {
+                        0: { mean: 4, rms: 18, max: 50 },
+                        1: { mean: 3, rms: 16, max: 46 },
+                        2: { mean: 2, rms: 14, max: 40 },
+                    },
+                    motor: {
+                        0: { mean: 1500, rms: 1510, max: 1700, count: 1400 },
+                        1: { mean: 1498, rms: 1508, max: 1690, count: 1400 },
+                        2: { mean: 1502, rms: 1512, max: 1710, count: 1400 },
+                        3: { mean: 1499, rms: 1509, max: 1695, count: 1400 },
+                    },
+                },
+            },
+            craftContext: { craftType: "long-range", flightStyle: "smooth-cruise" },
+            staticConfig: {
+                rates: {
+                    rates_type: 0,
+                    roll_rate: 100,
+                    pitch_rate: 96,
+                    yaw_rate: 72,
+                },
+            },
+        });
+
+        expect(result.quality.status).toBe("degraded");
+        expect(result.writeEnvelope.rates.writeableAllowed).toBe(false);
+        expect(result.writeEnvelope.rates.blockedReason).toBe("insufficient_rates_evidence");
+        expect(result.writeEnvelope.rates.candidates).toEqual({});
+    });
+
     it("marks otherwise usable logs as degraded when decode issues are present", () => {
         const result = analyzeBblLog({
             summary: {

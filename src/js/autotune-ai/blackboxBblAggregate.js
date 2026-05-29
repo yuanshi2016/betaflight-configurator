@@ -4,6 +4,7 @@ const QUALITY_STATUS = {
     USABLE: "usable",
 };
 
+const ENVELOPE_GROUPS = ["pid", "filters", "rates"];
 const CONFIDENCE_LEVELS = ["low", "medium", "high"];
 const PRIORITY_LEVELS = ["low", "medium", "high"];
 
@@ -220,6 +221,129 @@ function buildAggregateRecommendations(results) {
     return Array.from(grouped.values());
 }
 
+function getHighestEnvelopeConfidence(entries = []) {
+    return entries.reduce((highest, entry) => {
+        const current = entry?.confidence || "low";
+        return getConfidenceLevel(current) > getConfidenceLevel(highest) ? current : highest;
+    }, "low");
+}
+
+function getEnvelopeGroup(result, groupName) {
+    return result?.writeEnvelope?.[groupName] || null;
+}
+
+function pickDominantBlockedReason(reasons = []) {
+    if (!reasons.length) {
+        return "insufficient_group_evidence";
+    }
+
+    const counts = new Map();
+    reasons.forEach((reason) => {
+        counts.set(reason, (counts.get(reason) || 0) + 1);
+    });
+
+    return [...counts.entries()].sort((left, right) => {
+        if (right[1] !== left[1]) {
+            return right[1] - left[1];
+        }
+
+        return left[0].localeCompare(right[0]);
+    })[0][0];
+}
+
+function mergeCandidatesForGroup(entries = []) {
+    if (!entries.length) {
+        return {};
+    }
+
+    const firstKeys = Object.keys(entries[0]?.candidates || {}).sort();
+    const sameKeySet = entries.every((entry) => {
+        const candidateKeys = Object.keys(entry?.candidates || {}).sort();
+        return JSON.stringify(candidateKeys) === JSON.stringify(firstKeys);
+    });
+    if (!sameKeySet) {
+        return {};
+    }
+
+    const merged = {};
+    Object.entries(entries[0]?.candidates || {}).forEach(([key, candidate]) => {
+        const allSame = entries.every((entry) => {
+            const nextCandidate = entry?.candidates?.[key];
+            if (!nextCandidate) {
+                return false;
+            }
+
+            return (
+                nextCandidate.suggestedValue === candidate.suggestedValue &&
+                nextCandidate.min === candidate.min &&
+                nextCandidate.max === candidate.max &&
+                nextCandidate.step === candidate.step
+            );
+        });
+        if (!allSame) {
+            return;
+        }
+
+        const reasons = [...new Set(entries.map((entry) => entry?.candidates?.[key]?.reason).filter(Boolean))];
+        const evidenceRefs = [...new Set(entries.flatMap((entry) => entry?.candidates?.[key]?.evidenceRefs || []))];
+        merged[key] = {
+            ...cloneValue(candidate),
+            reason: reasons.join(" | ") || candidate.reason,
+            evidenceRefs,
+        };
+    });
+
+    return merged;
+}
+
+function buildAggregateEnvelopeForGroup(groupName, usableResults = [], aggregateQuality = {}) {
+    const entries = usableResults.map((result) => getEnvelopeGroup(result, groupName)).filter(Boolean);
+    if (!entries.length) {
+        return {
+            writeableAllowed: false,
+            blockedReason: "no_group_envelope",
+            confidence: "low",
+            candidates: {},
+        };
+    }
+
+    if (aggregateQuality?.status !== QUALITY_STATUS.USABLE) {
+        return {
+            writeableAllowed: false,
+            blockedReason: "aggregate_quality_not_usable",
+            confidence: getHighestEnvelopeConfidence(entries),
+            candidates: {},
+        };
+    }
+
+    const writeableEntries = entries.filter((entry) => entry.writeableAllowed === true);
+    if (writeableEntries.length < 2) {
+        return {
+            writeableAllowed: false,
+            blockedReason: pickDominantBlockedReason(entries.map((entry) => entry.blockedReason).filter(Boolean)),
+            confidence: getHighestEnvelopeConfidence(entries),
+            candidates: {},
+        };
+    }
+
+    const candidates = mergeCandidatesForGroup(writeableEntries);
+    if (!Object.keys(candidates).length) {
+        return {
+            writeableAllowed: false,
+            blockedReason: "conflicting_candidate_values",
+            confidence: "medium",
+            candidates: {},
+        };
+    }
+
+    return {
+        writeableAllowed: true,
+        blockedReason: "",
+        confidence: boostConfidence(getHighestEnvelopeConfidence(writeableEntries), writeableEntries.length),
+        candidates,
+    };
+}
+
 function groupAxisAdvice(results, axisName, category, adviceKey, filterFn = () => true) {
     const grouped = new Map();
 
@@ -335,6 +459,7 @@ export function aggregateBblAnalyses(results = []) {
     const usable = results.filter((result) => result?.quality?.status !== QUALITY_STATUS.UNUSABLE);
     const groups = groupDiagnostics(usable);
     const axisSummary = summarizeAxisAdvice(usable);
+    const aggregateQuality = summarizeAggregateQuality(results, usable);
 
     return {
         selectedLogIndexes: results.map((result) => result.logIndex),
@@ -342,8 +467,11 @@ export function aggregateBblAnalyses(results = []) {
         consensusDiagnostics: buildConsensus(groups),
         conflictingDiagnostics: buildConflictingDiagnostics(groups),
         aggregateRecommendations: buildAggregateRecommendations(usable),
-        aggregateQuality: summarizeAggregateQuality(results, usable),
+        aggregateQuality,
         axes: axisSummary.axes,
         axisConflicts: axisSummary.axisConflicts,
+        writeEnvelope: Object.fromEntries(
+            ENVELOPE_GROUPS.map((groupName) => [groupName, buildAggregateEnvelopeForGroup(groupName, usable, aggregateQuality)]),
+        ),
     };
 }
