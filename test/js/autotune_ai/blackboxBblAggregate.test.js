@@ -505,6 +505,22 @@ describe("autotune AI multi-log BBL aggregation", () => {
                                 reason: "first",
                                 evidenceRefs: ["roll.pidAdvice.ff"],
                             },
+                            slider_i_gain: {
+                                suggestedValue: 102,
+                                min: 100,
+                                max: 102,
+                                step: 1,
+                                reason: "first",
+                                evidenceRefs: ["roll.timeDomain.meanErrSteady"],
+                            },
+                            slider_d_gain: {
+                                suggestedValue: 103,
+                                min: 100,
+                                max: 103,
+                                step: 1,
+                                reason: "first",
+                                evidenceRefs: ["roll.pidAdvice.d"],
+                            },
                         },
                     },
                 },
@@ -536,6 +552,22 @@ describe("autotune AI multi-log BBL aggregation", () => {
                                 reason: "second",
                                 evidenceRefs: ["pitch.pidAdvice.ff"],
                             },
+                            slider_i_gain: {
+                                suggestedValue: 102,
+                                min: 100,
+                                max: 102,
+                                step: 1,
+                                reason: "second",
+                                evidenceRefs: ["pitch.timeDomain.meanErrSteady"],
+                            },
+                            slider_d_gain: {
+                                suggestedValue: 103,
+                                min: 100,
+                                max: 103,
+                                step: 1,
+                                reason: "second",
+                                evidenceRefs: ["pitch.pidAdvice.d"],
+                            },
                         },
                     },
                 },
@@ -557,6 +589,22 @@ describe("autotune AI multi-log BBL aggregation", () => {
                 suggestedValue: 104,
                 min: 100,
                 max: 104,
+                step: 1,
+            }),
+        );
+        expect(aggregate.writeEnvelope.pid.candidates.slider_i_gain).toEqual(
+            expect.objectContaining({
+                suggestedValue: 102,
+                min: 100,
+                max: 102,
+                step: 1,
+            }),
+        );
+        expect(aggregate.writeEnvelope.pid.candidates.slider_d_gain).toEqual(
+            expect.objectContaining({
+                suggestedValue: 103,
+                min: 100,
+                max: 103,
                 step: 1,
             }),
         );
