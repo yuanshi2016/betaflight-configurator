@@ -456,13 +456,34 @@
                 >
                     <div class="flex items-center justify-between gap-2">
                         <h3 class="text-sm font-semibold">{{ $t(group.labelKey) }}</h3>
-                        <span class="text-xs">
-                            {{
-                                group.data.writeable
-                                    ? $t("autotuneAiAcceptedByLocalGuard")
-                                    : $t("autotuneAiRejectedByLocalGuard")
-                            }}
-                        </span>
+                        <div class="flex items-center gap-2">
+                            <span
+                                v-if="writeState[group.key] === 'done'"
+                                class="text-xs text-green-500"
+                            >{{ $t("autotuneAiWriteSuccess") }}</span>
+                            <span
+                                v-else-if="writeState[group.key] === 'error'"
+                                class="text-xs text-red-500"
+                                :title="writeError[group.key]"
+                            >{{ $t("autotuneAiWriteError") }}</span>
+                            <span v-else class="text-xs">
+                                {{
+                                    group.data.writeable
+                                        ? $t("autotuneAiAcceptedByLocalGuard")
+                                        : $t("autotuneAiRejectedByLocalGuard")
+                                }}
+                            </span>
+                            <UButton
+                                v-if="group.values.length && group.data.writeable === true"
+                                size="xs"
+                                variant="ghost"
+                                icon="i-lucide-upload"
+                                :label="$t('autotuneAiWriteGroup')"
+                                :disabled="!canWrite"
+                                :loading="writeState[group.key] === 'loading'"
+                                @click="writeGroup(group.key)"
+                            />
+                        </div>
                     </div>
                     <p class="text-sm mt-2">
                         {{
@@ -529,28 +550,7 @@
                 >
                     <div class="flex items-center justify-between gap-2">
                         <h3 class="text-sm font-semibold">{{ $t(group.labelKey) }}</h3>
-                        <div class="flex items-center gap-2">
-                            <span
-                                v-if="writeState[group.key] === 'done'"
-                                class="text-xs text-green-500"
-                            >{{ $t("autotuneAiWriteSuccess") }}</span>
-                            <span
-                                v-else-if="writeState[group.key] === 'error'"
-                                class="text-xs text-red-500"
-                                :title="writeError[group.key]"
-                            >{{ $t("autotuneAiWriteError") }}</span>
-                            <span v-else class="text-xs">{{ $t(confidenceLabelKey(group.data.confidence)) }}</span>
-                            <UButton
-                                v-if="group.values.length && group.data.writeable === true"
-                                size="xs"
-                                variant="ghost"
-                                icon="i-lucide-upload"
-                                :label="$t('autotuneAiWriteGroup')"
-                                :disabled="!canWrite"
-                                :loading="writeState[group.key] === 'loading'"
-                                @click="writeGroup(group.key)"
-                            />
-                        </div>
+                        <span class="text-xs">{{ $t(confidenceLabelKey(group.data.confidence)) }}</span>
                     </div>
                     <p class="text-sm mt-2">{{ group.data.explanation }}</p>
                     <dl class="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-xs">
@@ -1014,7 +1014,7 @@ const RC_TUNING_KEYS = new Set([
 
 const canWrite = computed(() => connectionStore.connectionValid);
 const hasWriteableSelectedGroups = computed(() =>
-    recommendationGroups.value.some(
+    effectivePlanGroups.value.some(
         (group) =>
             sessionState.selectedGroups[group.key] &&
             group.data.writeable === true &&
@@ -1025,7 +1025,7 @@ const hasWriteableSelectedGroups = computed(() =>
 const isWritingAny = computed(() => Object.values(writeState).some((s) => s === "loading"));
 
 async function writeGroup(groupKey, { skipEeprom = false } = {}) {
-    const group = sessionState.aiResponse?.groups?.[groupKey];
+    const group = sessionState.effectivePlan?.groups?.[groupKey];
     if (!group || group.writeable !== true || !Object.keys(group.values || {}).length) {
         return false;
     }
@@ -1092,7 +1092,7 @@ async function writeGroup(groupKey, { skipEeprom = false } = {}) {
 }
 
 async function writeAll() {
-    const groups = recommendationGroups.value
+    const groups = effectivePlanGroups.value
         .filter((g) => sessionState.selectedGroups[g.key] && g.data.writeable === true && g.values.length)
         .map((g) => g.key);
 

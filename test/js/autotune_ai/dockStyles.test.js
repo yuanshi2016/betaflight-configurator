@@ -277,4 +277,27 @@ describe("autotune AI dock styles", () => {
         expect(traditionalChineseMessages).toContain("autotuneAiRejectedByLocalGuard");
         expect(traditionalChineseMessages).toContain("autotuneAiExplainOnly");
     });
+
+    it("routes FC writes through the effective plan instead of the raw ai response", () => {
+        const component = readFileSync("src/components/tabs/autotune/AiAdvisor.vue", "utf8");
+        const writePath = component.slice(
+            component.indexOf("const canWrite = computed"),
+            component.indexOf("async function runAnalysis"),
+        );
+        const effectivePlanSection = component.slice(
+            component.indexOf('v-if="sessionState.effectivePlan"'),
+            component.indexOf('<section class="autotune-ai-section">', component.indexOf('v-if="sessionState.effectivePlan"') + 1),
+        );
+        const rawAiSection = component.slice(
+            component.indexOf('v-if="sessionState.aiResponse"'),
+            component.indexOf('v-else class="rounded border border-neutral-500/30 p-3 text-sm text-dimmed"'),
+        );
+
+        expect(writePath).toContain("effectivePlanGroups.value");
+        expect(writePath).toContain("sessionState.effectivePlan?.groups?.[groupKey]");
+        expect(writePath).not.toContain("recommendationGroups.value");
+        expect(writePath).not.toContain("sessionState.aiResponse?.groups?.[groupKey]");
+        expect(effectivePlanSection).toContain('@click="writeGroup(group.key)"');
+        expect(rawAiSection).not.toContain('@click="writeGroup(group.key)"');
+    });
 });
