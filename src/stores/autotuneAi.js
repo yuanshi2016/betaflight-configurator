@@ -213,10 +213,12 @@ export function defaultSessionState() {
         selectedBblLogIndexes: [],
         localBblAnalysesByLog: {},
         localBblAnalysis: null,
+        localWriteEnvelope: null,
         sourceFileName: "",
         sourceType: "",
         sourceSummary: null,
         aiResponse: null,
+        effectivePlan: null,
         selectedGroups: {
             pid: true,
             filters: true,
@@ -357,12 +359,16 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         sessionState.selectedBblLogIndexes = [];
         sessionState.localBblAnalysesByLog = {};
         sessionState.localBblAnalysis = null;
+        sessionState.localWriteEnvelope = null;
+        sessionState.effectivePlan = null;
         bblFileData.value = null;
     }
 
     function invalidateAiOutput() {
         sessionState.aiResponse = null;
         sessionState.lastPayload = null;
+        sessionState.localWriteEnvelope = null;
+        sessionState.effectivePlan = null;
         clearConversation();
     }
 
@@ -474,10 +480,27 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
     }
 
     function refreshLocalBblAnalysis() {
+        if (sessionState.bblSummary && !bblFileData.value) {
+            clearBblDerivedState();
+            if (sessionState.sourceType === "bbl") {
+                sessionState.aiResponse = null;
+                sessionState.lastPayload = null;
+                clearConversation();
+            }
+            return null;
+        }
+
         if (!sessionState.bblSummary?.availableLogs?.length) {
             sessionState.selectedBblLogIndexes = [];
             sessionState.localBblAnalysesByLog = {};
             sessionState.localBblAnalysis = null;
+            sessionState.localWriteEnvelope = null;
+            sessionState.effectivePlan = null;
+            if (sessionState.sourceType === "bbl") {
+                sessionState.aiResponse = null;
+                sessionState.lastPayload = null;
+                clearConversation();
+            }
             return null;
         }
 
@@ -691,6 +714,8 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
 
     function resetResponse() {
         sessionState.aiResponse = null;
+        sessionState.effectivePlan = null;
+        sessionState.localWriteEnvelope = sessionState.localBblAnalysis?.writeEnvelope || null;
         sessionState.lastPayload = null;
         sessionState.lastError = "";
         sessionState.requestState = "idle";
@@ -770,13 +795,16 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
             assertPayloadRetainsRequiredLocalAnalysis(payload);
             const locale = i18n.getCurrentLocale();
             const rawResponse = await explainTuningAnalysis(providerSettings, payload, null, undefined, { locale });
+            const parsedResponse = parseAiResponse(rawResponse, payload);
 
             sessionState.lastPayload = payload;
+            sessionState.localWriteEnvelope = payload?.localAnalysis?.writeEnvelope || null;
             sessionState.conversationHistory = [
                 { role: "user", content: buildFirstTurnUserMessage(payload, locale) },
                 { role: "assistant", content: rawResponse },
             ];
-            sessionState.aiResponse = parseAiResponse(rawResponse, payload);
+            sessionState.aiResponse = parsedResponse;
+            sessionState.effectivePlan = parsedResponse?.effectivePlan || null;
             sessionState.requestState = "done";
             return sessionState.aiResponse;
         } catch (error) {
@@ -789,6 +817,10 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
     async function sendFollowUp() {
         const userMessage = String(sessionState.followUpInput || "").trim();
         if (!userMessage || sessionState.followUpState === "loading") {
+            return null;
+        }
+
+        if (!sessionState.lastPayload) {
             return null;
         }
 
@@ -814,7 +846,9 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
             trimHistory();
 
             try {
-                sessionState.aiResponse = parseAiResponse(rawResponse, payload);
+                const parsedResponse = parseAiResponse(rawResponse, payload);
+                sessionState.aiResponse = parsedResponse;
+                sessionState.effectivePlan = parsedResponse?.effectivePlan || null;
             } catch {
                 // Follow-up replies may be conversational text instead of a JSON recommendation update.
             }
