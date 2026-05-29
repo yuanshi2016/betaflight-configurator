@@ -64,14 +64,21 @@ function normalizeValues(group, values) {
 function normalizeGroup(group, candidate) {
     const source = candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate : {};
     return {
-        writeable: Boolean(source.writeable),
+        writeable: source.writeable === true,
         confidence: CONFIDENCE.has(source.confidence) ? source.confidence : "low",
         explanation: asString(source.explanation),
         values: normalizeValues(group, source.values),
     };
 }
 
-function getLocalAnalysisGating(payload = {}) {
+function getLocalAnalysisGating(payload) {
+    if (payload === undefined) {
+        return {
+            writeableAllowed: true,
+            reason: "",
+        };
+    }
+
     const localAnalysis = payload?.localAnalysis;
     if (!localAnalysis) {
         return {
@@ -114,6 +121,78 @@ function applyWriteabilityGating(groups, payload) {
     );
 }
 
+function getLocalWriteEnvelope(payload) {
+    return payload?.localAnalysis?.writeEnvelope || {};
+}
+
+function getEnvelopeGroup(payload, groupName) {
+    const envelope = getLocalWriteEnvelope(payload)?.[groupName];
+    return envelope && typeof envelope === "object" && !Array.isArray(envelope) ? envelope : null;
+}
+
+function reconcileGroupWithEnvelope(groupName, groupValue, payload) {
+    const envelope = getEnvelopeGroup(payload, groupName);
+    if (!envelope) {
+        return {
+            ...groupValue,
+            writeable: false,
+            explanation: groupValue.explanation
+                ? `Missing local envelope. ${groupValue.explanation}`.trim()
+                : "Missing local envelope.",
+            values: {},
+        };
+    }
+
+    if (envelope.writeableAllowed !== true) {
+        return {
+            ...groupValue,
+            writeable: false,
+            explanation: groupValue.explanation
+                ? `${envelope.blockedReason || "Local group gate blocked writes."} ${groupValue.explanation}`.trim()
+                : envelope.blockedReason || "Local group gate blocked writes.",
+            values: {},
+        };
+    }
+
+    const acceptedValues = Object.fromEntries(
+        Object.entries(groupValue.values || {}).filter(([key, value]) => {
+            const candidate = envelope.candidates?.[key];
+            return candidate && candidate.suggestedValue === value;
+        }),
+    );
+
+    if (!Object.keys(acceptedValues).length) {
+        return {
+            ...groupValue,
+            writeable: false,
+            explanation: groupValue.explanation
+                ? `No values matched local suggestedValue. ${groupValue.explanation}`.trim()
+                : "No values matched local suggestedValue.",
+            values: {},
+        };
+    }
+
+    return {
+        ...groupValue,
+        writeable: groupValue.writeable === true,
+        values: acceptedValues,
+    };
+}
+
+function reconcileGroups(groups, payload) {
+    const envelope = getLocalWriteEnvelope(payload);
+    if (!envelope || !Object.keys(envelope).length) {
+        return groups;
+    }
+
+    return Object.fromEntries(
+        Object.entries(groups).map(([groupName, groupValue]) => [
+            groupName,
+            reconcileGroupWithEnvelope(groupName, groupValue, payload),
+        ]),
+    );
+}
+
 export function parseAiResponse(responseText, payload = undefined) {
     let parsed;
 
@@ -131,11 +210,15 @@ export function parseAiResponse(responseText, payload = undefined) {
     });
 
     const gatedGroups = applyWriteabilityGating(groups, payload);
+    const reconciledGroups = reconcileGroups(gatedGroups, payload);
 
     return {
         summary: asString(parsed?.summary),
         overallRisk: RISKS.has(parsed?.overallRisk) ? parsed.overallRisk : "medium",
-        groups: gatedGroups,
+        groups: reconciledGroups,
+        effectivePlan: {
+            groups: reconciledGroups,
+        },
         flightTestNotes: asString(parsed?.flightTestNotes),
     };
 }
