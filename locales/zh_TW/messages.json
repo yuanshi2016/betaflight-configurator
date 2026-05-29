@@ -4658,5 +4658,14 @@
     "autotuneAiCraftOther": { "message": "其他" },
     "autotuneAiRiskConservative": { "message": "保守" },
     "autotuneAiRiskBalanced": { "message": "均衡" },
-    "autotuneAiRiskAggressive": { "message": "激進" }
+    "autotuneAiRiskAggressive": { "message": "激進" },
+    "autotuneAiLocalWriteEnvelope": { "message": "本地寫入邊界" },
+    "autotuneAiGuardedPlan": { "message": "本地守衛後的執行計畫" },
+    "autotuneAiLocalCandidates": { "message": "本地候選值" },
+    "autotuneAiAcceptedByLocalGuard": { "message": "已被本地守衛採納" },
+    "autotuneAiRejectedByLocalGuard": { "message": "被本地守衛拒絕" },
+    "autotuneAiAiRequested": { "message": "AI 只能從這些本地候選值中選擇。" },
+    "autotuneAiAiAccepted": { "message": "AI 已採納" },
+    "autotuneAiGuardRejected": { "message": "被本地守衛拒絕" },
+    "autotuneAiExplainOnly": { "message": "僅解釋，不可寫" }
 }

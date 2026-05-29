@@ -8990,5 +8990,14 @@
     "autotuneAiCraftOther": { "message": "其他" },
     "autotuneAiRiskConservative": { "message": "保守" },
     "autotuneAiRiskBalanced": { "message": "均衡" },
-    "autotuneAiRiskAggressive": { "message": "激进" }
+    "autotuneAiRiskAggressive": { "message": "激进" },
+    "autotuneAiLocalWriteEnvelope": { "message": "本地写入边界" },
+    "autotuneAiGuardedPlan": { "message": "本地守卫后的执行计划" },
+    "autotuneAiLocalCandidates": { "message": "本地候选值" },
+    "autotuneAiAcceptedByLocalGuard": { "message": "已被本地守卫采纳" },
+    "autotuneAiRejectedByLocalGuard": { "message": "被本地守卫拒绝" },
+    "autotuneAiAiRequested": { "message": "AI 只能从这些本地候选值中选择。" },
+    "autotuneAiAiAccepted": { "message": "AI 已采纳" },
+    "autotuneAiGuardRejected": { "message": "被本地守卫拒绝" },
+    "autotuneAiExplainOnly": { "message": "仅解释，不可写" }
 }

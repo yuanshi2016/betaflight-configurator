@@ -396,6 +396,94 @@
             </div>
         </section>
 
+        <section v-if="sessionState.localWriteEnvelope" class="autotune-ai-section">
+            <header class="autotune-ai-section__header">
+                <div class="autotune-ai-section__title">
+                    <UIcon name="i-lucide-shield-check" class="size-4" />
+                    <h3>{{ $t("autotuneAiLocalWriteEnvelope") }}</h3>
+                </div>
+            </header>
+
+            <div class="flex flex-col gap-3">
+                <div
+                    v-for="group in localWriteEnvelopeGroups"
+                    :key="`envelope-${group.key}`"
+                    class="rounded border border-neutral-500/30 p-3"
+                >
+                    <div class="flex items-center justify-between gap-2">
+                        <h3 class="text-sm font-semibold">{{ $t(group.labelKey) }}</h3>
+                        <span class="text-xs">
+                            {{
+                                group.data.writeableAllowed
+                                    ? $t("autotuneAiLocalCandidates")
+                                    : $t("autotuneAiExplainOnly")
+                            }}
+                        </span>
+                    </div>
+                    <p class="text-sm mt-2">
+                        {{
+                            group.data.writeableAllowed
+                                ? $t("autotuneAiLocalCandidates")
+                                : $t("autotuneAiExplainOnly")
+                        }}
+                    </p>
+                    <dl class="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-xs">
+                        <template v-for="item in group.candidates" :key="item.key">
+                            <dt class="text-dimmed">{{ item.key }}</dt>
+                            <dd class="font-mono">{{ item.value.suggestedValue }}</dd>
+                        </template>
+                    </dl>
+                    <div v-if="!group.candidates.length" class="text-xs text-dimmed mt-2">
+                        {{ $t("autotuneAiNoWriteableValues") }}
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section v-if="sessionState.effectivePlan" class="autotune-ai-section">
+            <header class="autotune-ai-section__header">
+                <div class="autotune-ai-section__title">
+                    <UIcon name="i-lucide-shield" class="size-4" />
+                    <h3>{{ $t("autotuneAiGuardedPlan") }}</h3>
+                </div>
+            </header>
+
+            <div class="flex flex-col gap-3">
+                <div
+                    v-for="group in effectivePlanGroups"
+                    :key="`effective-${group.key}`"
+                    class="rounded border border-neutral-500/30 p-3"
+                >
+                    <div class="flex items-center justify-between gap-2">
+                        <h3 class="text-sm font-semibold">{{ $t(group.labelKey) }}</h3>
+                        <span class="text-xs">
+                            {{
+                                group.data.writeable
+                                    ? $t("autotuneAiAcceptedByLocalGuard")
+                                    : $t("autotuneAiRejectedByLocalGuard")
+                            }}
+                        </span>
+                    </div>
+                    <p class="text-sm mt-2">
+                        {{
+                            group.data.writeable
+                                ? group.data.explanation
+                                : $t("autotuneAiRejectedByLocalGuard")
+                        }}
+                    </p>
+                    <dl class="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-xs">
+                        <template v-for="item in group.values" :key="item.key">
+                            <dt class="text-dimmed">{{ item.key }}</dt>
+                            <dd class="font-mono">{{ item.value }}</dd>
+                        </template>
+                    </dl>
+                    <div v-if="!group.values.length" class="text-xs text-dimmed mt-2">
+                        {{ $t("autotuneAiNoWriteableValues") }}
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <section class="autotune-ai-section">
             <header class="autotune-ai-section__header">
                 <div class="autotune-ai-section__title">
@@ -851,6 +939,34 @@ function saveCraftProfile() {
 
 const recommendationGroups = computed(() => {
     const groups = sessionState.aiResponse?.groups || {};
+    return [
+        { key: "pid", labelKey: "autotuneAiGroupPid", data: groups.pid },
+        { key: "filters", labelKey: "autotuneAiGroupFilters", data: groups.filters },
+        { key: "rates", labelKey: "autotuneAiGroupRates", data: groups.rates },
+    ]
+        .filter((group) => group.data)
+        .map((group) => ({
+            ...group,
+            values: Object.entries(group.data.values || {}).map(([key, value]) => ({ key, value })),
+        }));
+});
+
+const localWriteEnvelopeGroups = computed(() => {
+    const groups = sessionState.localWriteEnvelope || {};
+    return [
+        { key: "pid", labelKey: "autotuneAiGroupPid", data: groups.pid },
+        { key: "filters", labelKey: "autotuneAiGroupFilters", data: groups.filters },
+        { key: "rates", labelKey: "autotuneAiGroupRates", data: groups.rates },
+    ]
+        .filter((group) => group.data)
+        .map((group) => ({
+            ...group,
+            candidates: Object.entries(group.data.candidates || {}).map(([key, value]) => ({ key, value })),
+        }));
+});
+
+const effectivePlanGroups = computed(() => {
+    const groups = sessionState.effectivePlan?.groups || {};
     return [
         { key: "pid", labelKey: "autotuneAiGroupPid", data: groups.pid },
         { key: "filters", labelKey: "autotuneAiGroupFilters", data: groups.filters },
