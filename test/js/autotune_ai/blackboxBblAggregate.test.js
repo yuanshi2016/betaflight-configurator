@@ -399,8 +399,8 @@ describe("autotune AI multi-log BBL aggregation", () => {
                 recommendations: [],
                 writeEnvelope: {
                     filters: {
-                        writeableAllowed: true,
-                        blockedReason: "",
+                        writeableAllowed: false,
+                        blockedReason: "single_log_filter_evidence_requires_confirmation",
                         confidence: "medium",
                         candidates: {
                             slider_gyro_filter_multiplier: {
@@ -430,8 +430,8 @@ describe("autotune AI multi-log BBL aggregation", () => {
                 recommendations: [],
                 writeEnvelope: {
                     filters: {
-                        writeableAllowed: true,
-                        blockedReason: "",
+                        writeableAllowed: false,
+                        blockedReason: "single_log_filter_evidence_requires_confirmation",
                         confidence: "high",
                         candidates: {
                             slider_gyro_filter_multiplier: {

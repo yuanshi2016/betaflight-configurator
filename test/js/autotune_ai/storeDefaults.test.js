@@ -502,11 +502,23 @@ describe("autotune AI store defaults", () => {
         mockFc.TUNING_SLIDERS = {
             slider_gyro_filter_multiplier: 97,
             slider_dterm_filter_multiplier: 94,
+            slider_pids_mode: 1,
+            slider_master_multiplier: 102,
+            slider_i_gain: 110,
+            slider_d_gain: 108,
+            slider_feedforward_gain: 106,
         };
 
         const store = useAutotuneAiStore();
         store.sessionState.parsedCliSummary = {
             rates: { roll_rate: 700 },
+            pid: {
+                simplified_pids_mode: 0,
+                simplified_master_multiplier: 90,
+                simplified_i_gain: 88,
+                simplified_d_gain: 86,
+                simplified_feedforward_gain: 84,
+            },
             filters: {
                 simplified_gyro_filter_multiplier: 90,
                 simplified_dterm_filter_multiplier: 88,
@@ -526,13 +538,27 @@ describe("autotune AI store defaults", () => {
                 slider_gyro_filter_multiplier: 97,
                 slider_dterm_filter_multiplier: 94,
             },
+            pid: {
+                slider_pids_mode: 1,
+                slider_master_multiplier: 102,
+                slider_i_gain: 110,
+                slider_d_gain: 108,
+                slider_feedforward_gain: 106,
+            },
         });
     });
 
-    it("falls back to parsed CLI filter sliders when current FC filter sliders are unavailable", async () => {
+    it("falls back to parsed CLI filter and PID sliders when current FC sliders are unavailable", async () => {
         const store = useAutotuneAiStore();
         store.sessionState.parsedCliSummary = {
             rates: { roll_rate: 700, pitch_rate: 680 },
+            pid: {
+                simplified_pids_mode: 0,
+                simplified_master_multiplier: 91,
+                simplified_i_gain: 89,
+                simplified_d_gain: 87,
+                simplified_feedforward_gain: 85,
+            },
             filters: {
                 simplified_gyro_filter_multiplier: 93,
                 simplified_dterm_filter_multiplier: 91,
@@ -551,6 +577,13 @@ describe("autotune AI store defaults", () => {
             filters: {
                 slider_gyro_filter_multiplier: 93,
                 slider_dterm_filter_multiplier: 91,
+            },
+            pid: {
+                slider_pids_mode: 0,
+                slider_master_multiplier: 91,
+                slider_i_gain: 89,
+                slider_d_gain: 87,
+                slider_feedforward_gain: 85,
             },
         });
     });

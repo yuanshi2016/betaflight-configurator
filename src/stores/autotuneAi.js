@@ -456,10 +456,27 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
                 slider_gyro_filter_multiplier: FC.TUNING_SLIDERS.slider_gyro_filter_multiplier,
                 slider_dterm_filter_multiplier: FC.TUNING_SLIDERS.slider_dterm_filter_multiplier,
             };
+            result.pid = {
+                slider_pids_mode: FC.TUNING_SLIDERS.slider_pids_mode,
+                slider_master_multiplier: FC.TUNING_SLIDERS.slider_master_multiplier,
+                slider_i_gain: FC.TUNING_SLIDERS.slider_i_gain,
+                slider_d_gain: FC.TUNING_SLIDERS.slider_d_gain,
+                slider_feedforward_gain: FC.TUNING_SLIDERS.slider_feedforward_gain,
+            };
         } else if (sessionState.parsedCliSummary?.filters && Object.keys(sessionState.parsedCliSummary.filters).length) {
             result.filters = {
                 slider_gyro_filter_multiplier: sessionState.parsedCliSummary.filters.simplified_gyro_filter_multiplier,
                 slider_dterm_filter_multiplier: sessionState.parsedCliSummary.filters.simplified_dterm_filter_multiplier,
+            };
+        }
+
+        if (!result.pid && sessionState.parsedCliSummary?.pid && Object.keys(sessionState.parsedCliSummary.pid).length) {
+            result.pid = {
+                slider_pids_mode: sessionState.parsedCliSummary.pid.simplified_pids_mode,
+                slider_master_multiplier: sessionState.parsedCliSummary.pid.simplified_master_multiplier,
+                slider_i_gain: sessionState.parsedCliSummary.pid.simplified_i_gain,
+                slider_d_gain: sessionState.parsedCliSummary.pid.simplified_d_gain,
+                slider_feedforward_gain: sessionState.parsedCliSummary.pid.simplified_feedforward_gain,
             };
         }
 

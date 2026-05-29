@@ -232,6 +232,30 @@ function getEnvelopeGroup(result, groupName) {
     return result?.writeEnvelope?.[groupName] || null;
 }
 
+function hasEnvelopeCandidates(entry) {
+    return Boolean(entry?.candidates && Object.keys(entry.candidates).length);
+}
+
+function isPromotableEnvelopeEntry(groupName, entry) {
+    if (!entry) {
+        return false;
+    }
+
+    if (entry.writeableAllowed === true) {
+        return true;
+    }
+
+    if (groupName === "filters" && entry.blockedReason === "single_log_filter_evidence_requires_confirmation") {
+        return hasEnvelopeCandidates(entry);
+    }
+
+    if (groupName === "pid" && entry.blockedReason === "single_log_pid_requires_multi_log_confirmation") {
+        return hasEnvelopeCandidates(entry);
+    }
+
+    return false;
+}
+
 function pickDominantBlockedReason(reasons = []) {
     if (!reasons.length) {
         return "insufficient_group_evidence";
@@ -316,8 +340,8 @@ function buildAggregateEnvelopeForGroup(groupName, usableResults = [], aggregate
         };
     }
 
-    const writeableEntries = entries.filter((entry) => entry.writeableAllowed === true);
-    if (writeableEntries.length < 2) {
+    const promotableEntries = entries.filter((entry) => isPromotableEnvelopeEntry(groupName, entry));
+    if (promotableEntries.length < 2) {
         return {
             writeableAllowed: false,
             blockedReason: pickDominantBlockedReason(entries.map((entry) => entry.blockedReason).filter(Boolean)),
@@ -326,7 +350,7 @@ function buildAggregateEnvelopeForGroup(groupName, usableResults = [], aggregate
         };
     }
 
-    const candidates = mergeCandidatesForGroup(writeableEntries);
+    const candidates = mergeCandidatesForGroup(promotableEntries);
     if (!Object.keys(candidates).length) {
         return {
             writeableAllowed: false,
@@ -339,7 +363,7 @@ function buildAggregateEnvelopeForGroup(groupName, usableResults = [], aggregate
     return {
         writeableAllowed: true,
         blockedReason: "",
-        confidence: boostConfidence(getHighestEnvelopeConfidence(writeableEntries), writeableEntries.length),
+        confidence: boostConfidence(getHighestEnvelopeConfidence(promotableEntries), promotableEntries.length),
         candidates,
     };
 }
