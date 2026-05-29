@@ -37,6 +37,7 @@
                         ref="activeTabInstance"
                     />
                 </div>
+                <AiAdvisorDock />
             </div>
             <status-bar
                 :port-usage-down="PortUsage.port_usage_down"
@@ -65,6 +66,7 @@ import { useMediaQuery } from "@vueuse/core";
 import ConnectButton from "./components/port-picker/ConnectButton.vue";
 import GlobalDialogs from "./components/dialogs/GlobalDialogs.vue";
 import Sidebar from "./components/sidebar/Sidebar.vue";
+import AiAdvisorDock from "./components/tabs/autotune/AiAdvisorDock.vue";
 import FCModule from "./js/fc.js";
 import MSPModule from "./js/msp.js";
 import PortUsageModule from "./js/port_usage.js";

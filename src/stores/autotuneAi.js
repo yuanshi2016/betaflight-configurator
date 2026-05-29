@@ -20,6 +20,7 @@ const SESSION_STATE_KEY = "AutotuneAiPanelState";
 export const MAX_HISTORY_TOKENS = 6000;
 const HISTORY_ANCHOR_MESSAGES = 2;
 const PREFERRED_RECENT_MESSAGES = 4;
+const MAX_RECOMMENDED_BBL_LOGS = 3;
 
 const REQUIRED_CONTEXT_FIELDS = [
     "craftType",
@@ -623,6 +624,71 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         return sessionState.selectedBblLogIndexes;
     }
 
+    function selectRecommendedBblLogs() {
+        const logMetaByIndex = Object.fromEntries(
+            (sessionState.bblSummary?.availableLogs || []).map((log) => [
+                log.index,
+                {
+                    durationUs: Number(log.durationUs) || 0,
+                    decodedMainFrames: Number(log.decodedMainFrames) || 0,
+                    corruptFrames: Number(log.corruptFrames) || 0,
+                },
+            ]),
+        );
+        const availableIndexes = (sessionState.bblSummary?.availableLogs || [])
+            .map((log) => log.index)
+            .filter(Number.isInteger);
+        const perLogEntries = availableIndexes.map((index) => {
+            return sessionState.localBblAnalysesByLog[index] || analyzeSelectedBblLog(index);
+        });
+        const getDecodeHealthScore = (index) => {
+            const meta = logMetaByIndex[index] || {};
+            const decoded = meta.decodedMainFrames || 0;
+            const corrupt = meta.corruptFrames || 0;
+            const total = decoded + corrupt;
+            if (total <= 0) {
+                return 0;
+            }
+
+            return decoded / total;
+        };
+        const sortRecommendedIndexes = (left, right) => {
+            const healthDelta = getDecodeHealthScore(right) - getDecodeHealthScore(left);
+            if (healthDelta !== 0) {
+                return healthDelta;
+            }
+
+            const durationDelta = (logMetaByIndex[right]?.durationUs || 0) - (logMetaByIndex[left]?.durationUs || 0);
+            if (durationDelta !== 0) {
+                return durationDelta;
+            }
+
+            return left - right;
+        };
+
+        const usable = perLogEntries
+            .filter((entry) => entry?.quality?.status === "usable" && Number.isInteger(entry?.logIndex))
+            .map((entry) => entry.logIndex)
+            .sort(sortRecommendedIndexes)
+            .slice(0, MAX_RECOMMENDED_BBL_LOGS);
+
+        if (usable.length) {
+            return setSelectedBblLogIndexes(usable);
+        }
+
+        const degraded = perLogEntries
+            .filter((entry) => entry?.quality?.status === "degraded" && Number.isInteger(entry?.logIndex))
+            .map((entry) => entry.logIndex)
+            .sort(sortRecommendedIndexes)
+            .slice(0, MAX_RECOMMENDED_BBL_LOGS);
+
+        if (degraded.length) {
+            return setSelectedBblLogIndexes(degraded);
+        }
+
+        return sessionState.selectedBblLogIndexes;
+    }
+
     function resetResponse() {
         sessionState.aiResponse = null;
         sessionState.lastPayload = null;
@@ -643,6 +709,42 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         sessionState.followUpState = "idle";
     }
 
+    function getLocalBblAnalysisErrorMessage() {
+        const reason = sessionState.localBblAnalysis?.aggregateQuality?.reason;
+
+        if (reason === "includes_unusable_logs") {
+            return "Selected BBL logs include unusable local evidence. Re-select cleaner logs before AI analysis.";
+        }
+        if (reason === "includes_degraded_logs") {
+            return "Selected BBL logs include degraded local evidence. Re-select cleaner logs before AI analysis.";
+        }
+        if (reason === "no_usable_logs") {
+            return "Selected BBL logs did not produce usable local evidence. Re-select cleaner logs before AI analysis.";
+        }
+
+        return "Local BBL evidence is not usable enough for AI recommendations.";
+    }
+
+    function assertPayloadRetainsRequiredLocalAnalysis(payload) {
+        if (!payload?.sourceSummary?.hasBbl) {
+            return;
+        }
+
+        if (!payload?.localAnalysis) {
+            throw new Error("Local BBL analysis was not preserved in the AI payload. Reduce payload size or reselect logs.");
+        }
+    }
+
+    function assertLocalBblEvidenceUsableForAi() {
+        if (!sessionState.bblSummary || !sessionState.localBblAnalysis) {
+            return;
+        }
+
+        if (sessionState.localBblAnalysis.aggregateQuality?.status !== "usable") {
+            throw new Error(getLocalBblAnalysisErrorMessage());
+        }
+    }
+
     async function analyze({ analysisResult = null } = {}) {
         if (!requiredContextComplete.value) {
             throw new Error("Fill the required craft context fields before analysis.");
@@ -656,6 +758,7 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         clearConversation();
 
         try {
+            assertLocalBblEvidenceUsableForAi();
             const payload = buildAiPayload({
                 craftContext,
                 cliSummary: sessionState.parsedCliSummary,
@@ -664,6 +767,7 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
                 analysisResult,
                 localBblAnalysis: sessionState.localBblAnalysis,
             });
+            assertPayloadRetainsRequiredLocalAnalysis(payload);
             const locale = i18n.getCurrentLocale();
             const rawResponse = await explainTuningAnalysis(providerSettings, payload, null, undefined, { locale });
 
@@ -672,7 +776,7 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
                 { role: "user", content: buildFirstTurnUserMessage(payload, locale) },
                 { role: "assistant", content: rawResponse },
             ];
-            sessionState.aiResponse = parseAiResponse(rawResponse);
+            sessionState.aiResponse = parseAiResponse(rawResponse, payload);
             sessionState.requestState = "done";
             return sessionState.aiResponse;
         } catch (error) {
@@ -698,6 +802,7 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         const providerHistory = trimHistory();
 
         try {
+            const payload = sessionState.lastPayload || null;
             const rawResponse = await explainTuningAnalysis(
                 providerSettings,
                 null,
@@ -709,7 +814,7 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
             trimHistory();
 
             try {
-                sessionState.aiResponse = parseAiResponse(rawResponse);
+                sessionState.aiResponse = parseAiResponse(rawResponse, payload);
             } catch {
                 // Follow-up replies may be conversational text instead of a JSON recommendation update.
             }
@@ -746,6 +851,7 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         selectBblLog,
         setSelectedBblLogIndexes,
         toggleBblLogSelection,
+        selectRecommendedBblLogs,
         refreshLocalBblAnalysis,
         resetResponse,
         clearConversation,

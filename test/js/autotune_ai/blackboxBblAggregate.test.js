@@ -203,4 +203,104 @@ describe("autotune AI multi-log BBL aggregation", () => {
         expect(aggregate.consensusDiagnostics).toEqual([]);
         expect(aggregate.aggregateRecommendations).toEqual([]);
     });
+
+    it("boosts repeated per-axis PID advice and marks conflicting directions separately", () => {
+        const aggregate = aggregateBblAnalyses([
+            {
+                logIndex: 0,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                axes: {
+                    roll: {
+                        timeDomain: { rmsError: 40 },
+                        frequencyDomain: { fftUsable: true },
+                        pidAdvice: {
+                            p: { direction: "increase", confidence: "medium", reason: "moving_error_high" },
+                        },
+                        filterAdvice: {
+                            gyroNotch: { direction: "enable", confidence: "medium", reason: "gyro_peak" },
+                        },
+                    },
+                },
+            },
+            {
+                logIndex: 1,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                axes: {
+                    roll: {
+                        timeDomain: { rmsError: 45 },
+                        frequencyDomain: { fftUsable: true },
+                        pidAdvice: {
+                            p: { direction: "increase", confidence: "high", reason: "moving_error_high" },
+                        },
+                        filterAdvice: {
+                            gyroNotch: { direction: "enable", confidence: "medium", reason: "gyro_peak" },
+                        },
+                    },
+                },
+            },
+            {
+                logIndex: 2,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                axes: {
+                    roll: {
+                        timeDomain: { rmsError: 10 },
+                        frequencyDomain: { fftUsable: true },
+                        pidAdvice: {
+                            p: { direction: "decrease", confidence: "medium", reason: "oscillation_risk" },
+                        },
+                        filterAdvice: {
+                            gyroNotch: { direction: "disable", confidence: "low", reason: "clean_spectrum" },
+                        },
+                    },
+                },
+            },
+            {
+                logIndex: 3,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                axes: {
+                    roll: {
+                        timeDomain: { rmsError: 50 },
+                        frequencyDomain: { fftUsable: false, reason: "insufficient_samples" },
+                        pidAdvice: {
+                            p: { direction: "increase", confidence: "medium", reason: "moving_error_high" },
+                        },
+                        filterAdvice: {},
+                    },
+                },
+            },
+        ]);
+
+        expect(aggregate.axes.roll.pidAdvice.p).toEqual(
+            expect.objectContaining({
+                direction: "increase",
+                confidence: "high",
+                supportCount: 3,
+                conflictCount: 1,
+            }),
+        );
+        expect(aggregate.axes.roll.filterAdvice.gyroNotch).toEqual(
+            expect.objectContaining({
+                direction: "enable",
+                supportCount: 2,
+                conflictCount: 1,
+            }),
+        );
+        expect(aggregate.axisConflicts).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    axis: "roll",
+                    advicePath: "pidAdvice.p",
+                    conflictingDirections: ["decrease", "increase"],
+                }),
+            ]),
+        );
+    });
 });

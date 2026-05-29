@@ -315,6 +315,61 @@ td [role="group"] {
     background-color: var(--surface-100);
     width: 100%;
 }
+
+#autotune-ai-dock {
+    flex: 0 0 clamp(22rem, 30vw, 32rem);
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--surface-300);
+    background-color: var(--surface-100);
+    box-shadow: -0.25rem 0 0.75rem rgba(0, 0, 0, 0.12);
+    z-index: 20;
+}
+
+.autotune-ai-dock__header {
+    flex: 0 0 auto;
+    min-height: 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--surface-300);
+    background-color: var(--surface-200);
+}
+
+.autotune-ai-dock__body {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 0.75rem;
+}
+
+#autotune-ai-dock-toggle {
+    position: fixed;
+    right: 1rem;
+    bottom: 3.5rem;
+    z-index: 1200;
+    box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.25);
+}
+
+.autotune-ai-advisor {
+    min-width: 0;
+    user-select: text;
+}
+
+.autotune-ai-advisor * {
+    user-select: text;
+}
+
+.autotune-ai-advisor button,
+.autotune-ai-advisor [role="button"],
+.autotune-ai-advisor input,
+.autotune-ai-advisor textarea {
+    user-select: auto;
+}
 .tab_container.logopen {
     overflow-x: hidden;
     overflow-y: auto;
@@ -1558,6 +1613,16 @@ each(range(12), {
     }
     #content {
         width: 100% !important;
+    }
+    #autotune-ai-dock {
+        position: fixed;
+        z-index: 1700;
+        top: 3rem;
+        right: 0;
+        bottom: 2.5rem;
+        width: min(100%, 28rem);
+        max-width: 100%;
+        border-left: 1px solid var(--surface-300);
     }
     .info {
         width: 100%;

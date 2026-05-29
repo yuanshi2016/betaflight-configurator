@@ -643,6 +643,101 @@ function collectFrameStats(frame, frameDef, stats) {
     });
 }
 
+function createAxisSeriesCollection() {
+    return {
+        roll: { timeUs: [], gyro: [], setpoint: [], dterm: [] },
+        pitch: { timeUs: [], gyro: [], setpoint: [], dterm: [] },
+        yaw: { timeUs: [], gyro: [], setpoint: [], dterm: [] },
+    };
+}
+
+function getAxisName(index) {
+    return ["roll", "pitch", "yaw"][index] || null;
+}
+
+function buildFieldIndexMap(frameDef) {
+    const lookup = {
+        time: frameDef.name.indexOf("time"),
+        gyro: {},
+        setpoint: {},
+        dterm: {},
+    };
+
+    frameDef.name.forEach((name, index) => {
+        const parsed = parseIndexedFieldName(name);
+        if (!parsed) {
+            return;
+        }
+
+        if (parsed.group === "gyroADC") {
+            lookup.gyro[parsed.axis] = index;
+        } else if (parsed.group === "setpoint") {
+            lookup.setpoint[parsed.axis] = index;
+        } else if (parsed.group === "debug" && Number(parsed.axis) <= 2) {
+            lookup.dterm[parsed.axis] = index;
+        }
+    });
+
+    return lookup;
+}
+
+function collectAxisSeries(frame, fieldIndexMap, axisSeriesCollection) {
+    const timeIndex = fieldIndexMap.time;
+    if (timeIndex < 0) {
+        return;
+    }
+
+    const timeUs = frame[timeIndex];
+    ["0", "1", "2"].forEach((axisKey) => {
+        const gyroIndex = fieldIndexMap.gyro[axisKey];
+        const setpointIndex = fieldIndexMap.setpoint[axisKey];
+        if (!Number.isInteger(gyroIndex) || !Number.isInteger(setpointIndex)) {
+            return;
+        }
+
+        const axisName = getAxisName(Number(axisKey));
+        if (!axisName) {
+            return;
+        }
+
+        const axisSeries = axisSeriesCollection[axisName];
+        axisSeries.timeUs.push(timeUs);
+        axisSeries.gyro.push(frame[gyroIndex]);
+        axisSeries.setpoint.push(frame[setpointIndex]);
+
+        const dtermIndex = fieldIndexMap.dterm[axisKey];
+        if (Number.isInteger(dtermIndex)) {
+            axisSeries.dterm.push(frame[dtermIndex]);
+        }
+    });
+}
+
+function buildAnalysisInput(axisSeriesCollection, logIndex) {
+    const axes = Object.fromEntries(
+        Object.entries(axisSeriesCollection)
+            .filter(([, series]) => series.timeUs.length && series.gyro.length === series.timeUs.length)
+            .map(([axisName, series]) => {
+                const axisSeries = {
+                    timeUs: series.timeUs,
+                    gyro: series.gyro,
+                    setpoint: series.setpoint,
+                };
+                if (series.dterm.length === series.timeUs.length) {
+                    axisSeries.dterm = series.dterm;
+                }
+                return [axisName, axisSeries];
+            }),
+    );
+
+    return Object.keys(axes).length
+        ? {
+              sourceType: "bbl",
+              logIndex,
+              axes,
+          }
+        : null;
+}
+
 function skipToNextFrame(data, state) {
     while (state.pos < state.end) {
         const byte = data[state.pos];
@@ -664,6 +759,8 @@ function decodeMainFrameSummary(data, boundary, dataStart, frameDefs, headers, {
     const motor0Index = frameDefs.I.name.indexOf("motor[0]");
     const timeIndex = frameDefs.I.name.indexOf("time");
     const stats = {};
+    const axisSeriesCollection = createAxisSeriesCollection();
+    const fieldIndexMap = buildFieldIndexMap(frameDefs.I);
     const samples = {
         decodedMainFrames: 0,
         corruptFrames: 0,
@@ -745,6 +842,7 @@ function decodeMainFrameSummary(data, boundary, dataStart, frameDefs, headers, {
         previous = frame;
         samples.decodedMainFrames += 1;
         collectFrameStats(frame, frameDefs.I, stats);
+        collectAxisSeries(frame, fieldIndexMap, axisSeriesCollection);
 
         if (timeIndex >= 0) {
             const time = frame[timeIndex];
@@ -764,7 +862,11 @@ function decodeMainFrameSummary(data, boundary, dataStart, frameDefs, headers, {
         samples.durationUs = samples.lastTimeUs - samples.firstTimeUs;
     }
 
-    return { samples, fieldStats: normalizeStats(stats) };
+    return {
+        samples,
+        fieldStats: normalizeStats(stats),
+        analysisInput: buildAnalysisInput(axisSeriesCollection),
+    };
 }
 
 function parseLogAtBoundary(data, boundary, index, maxDecodedFrames) {
@@ -852,5 +954,11 @@ export function buildBblSummary({
         fields: summarizeFields(frameFields),
         samples: decoded.samples,
         fieldStats: decoded.fieldStats,
+        analysisInput: decoded.analysisInput
+            ? {
+                  ...decoded.analysisInput,
+                  logIndex: resolvedSelectedLogIndex,
+              }
+            : null,
     };
 }

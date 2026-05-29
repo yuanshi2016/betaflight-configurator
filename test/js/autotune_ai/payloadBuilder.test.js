@@ -105,6 +105,28 @@ describe("autotune AI payload builder", () => {
                         },
                     },
                 ],
+                axes: {
+                    roll: {
+                        timeDomain: {
+                            rmsError: 12.5,
+                            maxError: 40,
+                            meanErrMoving: 15,
+                            meanErrSteady: 3,
+                        },
+                        frequencyDomain: {
+                            fftUsable: true,
+                            sampleRateHz: 1000,
+                            gyroPeakFreqHz: 180,
+                            dtermHighFreqAvg: 17,
+                        },
+                        pidAdvice: {
+                            p: { direction: "increase", confidence: "high", reason: "moving_error_high" },
+                        },
+                        filterAdvice: {
+                            gyroNotch: { direction: "enable", confidence: "medium", reason: "gyro_peak" },
+                        },
+                    },
+                },
                 rawSamples: [{ axis: "roll", values: [1, 2, 3] }],
             },
         });
@@ -147,6 +169,36 @@ describe("autotune AI payload builder", () => {
                     },
                 },
             ],
+            axes: {
+                roll: {
+                    timeDomain: {
+                        rmsError: 12.5,
+                        maxError: 40,
+                        meanErrMoving: 15,
+                        meanErrSteady: 3,
+                    },
+                    frequencyDomain: {
+                        fftUsable: true,
+                        sampleRateHz: 1000,
+                        gyroPeakFreqHz: 180,
+                        dtermHighFreqAvg: 17,
+                    },
+                    pidAdvice: {
+                        p: {
+                            direction: "increase",
+                            confidence: "high",
+                            reason: "moving_error_high",
+                        },
+                    },
+                    filterAdvice: {
+                        gyroNotch: {
+                            direction: "enable",
+                            confidence: "medium",
+                            reason: "gyro_peak",
+                        },
+                    },
+                },
+            },
         });
         expect(payload.localAnalysis.consensusDiagnostics).toHaveLength(1);
         expect(payload.localAnalysis.consensusDiagnostics[0].explanation.length).toBeLessThanOrEqual(240);
@@ -279,6 +331,177 @@ describe("autotune AI payload builder", () => {
         expect(payload.staticConfig.cli).toBeUndefined();
         expect(payload.staticConfig.csv).toBeUndefined();
         expect(payload.staticConfig.bbl).toBeUndefined();
-        expect(payload.localAnalysis).toBeUndefined();
+        expect(payload.localAnalysis).toEqual(
+            expect.objectContaining({
+                selectedLogIndexes: [1, 2, 3],
+                aggregateQuality: { status: "usable", reason: expect.any(String) },
+            }),
+        );
+    });
+
+    it("preserves local analysis ahead of bulky source summaries when compacting oversized payloads", () => {
+        const hugeText = repeatText("oversized-", 4000);
+        const payload = buildAiPayload({
+            cliSummary: { pid: { p_pitch: 58 }, notes: hugeText },
+            bblSummary: {
+                fileName: "flight.bbl",
+                availableLogs: Array.from({ length: 20 }, (_, index) => ({
+                    index,
+                    decodedMainFrames: 20_000,
+                    corruptFrames: index,
+                    durationUs: 1_000_000 + index,
+                })),
+                fieldStats: {
+                    gyroADC: Object.fromEntries(
+                        Array.from({ length: 3 }, (_, index) => [
+                            String(index),
+                            { mean: hugeText, rms: hugeText, max: hugeText },
+                        ]),
+                    ),
+                },
+            },
+            localBblAnalysis: {
+                selectedLogIndexes: [7, 1],
+                aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" },
+                axes: {
+                    roll: {
+                        timeDomain: { rmsError: 10, maxError: 20, meanErrMoving: 8, meanErrSteady: 2 },
+                    },
+                },
+            },
+        });
+
+        expect(JSON.stringify(payload).length).toBeLessThanOrEqual(20 * 1024);
+        expect(payload.localAnalysis).toEqual(
+            expect.objectContaining({
+                selectedLogIndexes: [7, 1],
+                aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" },
+            }),
+        );
+        expect(payload.inputSources.cli.summary).toBeUndefined();
+        expect(payload.inputSources.bbl.summary).toBeUndefined();
+    });
+
+    it("keeps lightweight local analysis evidence before falling back to quality-only compaction", () => {
+        const hugeText = repeatText("oversized-", 6000);
+        const payload = buildAiPayload({
+            cliSummary: { pid: { p_pitch: 58 }, notes: hugeText.repeat(2) },
+            csvSummary: { columns: ["debug[0]"], notes: hugeText.repeat(2) },
+            bblSummary: { fileName: "flight.bbl", notes: hugeText.repeat(2) },
+            analysisResult: {
+                axes: {
+                    roll: {
+                        recommendedGains: { p: 60, d: 40 },
+                        coherenceMean: 0.95,
+                        peakFrequencyHz: 180,
+                        rawSpectrum: hugeText,
+                    },
+                },
+            },
+            localBblAnalysis: {
+                selectedLogIndexes: [1, 2, 3],
+                aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" },
+                consensusDiagnostics: Array.from({ length: 8 }, (_, index) => ({
+                    type: `consensus-${index}`,
+                    confidence: "high",
+                    risk: "medium",
+                    classification: "oscillation",
+                    explanation: hugeText,
+                    evidence: {
+                        metric: `metric-${index}`,
+                        axis: "roll",
+                        detail: hugeText,
+                        peaks: Array.from({ length: 12 }, (_, peakIndex) => peakIndex),
+                    },
+                })),
+                conflictingDiagnostics: Array.from({ length: 8 }, (_, index) => ({
+                    type: `conflict-${index}`,
+                    confidence: "medium",
+                    conflict: "mixed",
+                    sources: ["a", "b", "c", "d", "e"],
+                    explanation: hugeText,
+                })),
+                aggregateRecommendations: Array.from({ length: 8 }, (_, index) => ({
+                    type: `recommendation-${index}`,
+                    group: index % 2 === 0 ? "pid" : "filters",
+                    priority: "high",
+                    actionability: "config_review",
+                    explanation: hugeText,
+                    configSnapshot: {
+                        profile: index,
+                        detail: hugeText,
+                        recentAdjustments: Array.from({ length: 12 }, (_, adjustmentIndex) => ({
+                            axis: "roll",
+                            value: adjustmentIndex,
+                            note: hugeText,
+                        })),
+                    },
+                })),
+                axes: {
+                    roll: {
+                        timeDomain: {
+                            rmsError: 12.5,
+                            maxError: 40,
+                            meanErrMoving: 15,
+                            meanErrSteady: 3,
+                            note: hugeText,
+                        },
+                        frequencyDomain: {
+                            fftUsable: true,
+                            sampleRateHz: 1000,
+                            gyroPeakFreqHz: 180,
+                            dtermHighFreqAvg: 17,
+                            detail: hugeText,
+                        },
+                        pidAdvice: {
+                            p: { direction: "increase", confidence: "high", reason: hugeText, metric: 18.5 },
+                        },
+                        filterAdvice: {
+                            gyroNotch: {
+                                direction: "enable",
+                                confidence: "medium",
+                                reason: hugeText,
+                                targetHz: 180,
+                            },
+                        },
+                    },
+                    pitch: {
+                        timeDomain: {
+                            rmsError: 16.5,
+                            maxError: 46,
+                            meanErrMoving: 18,
+                            meanErrSteady: 4,
+                            note: hugeText,
+                        },
+                        frequencyDomain: {
+                            fftUsable: true,
+                            sampleRateHz: 1000,
+                            gyroPeakFreqHz: 200,
+                            dtermHighFreqAvg: 19,
+                            detail: hugeText,
+                        },
+                        pidAdvice: {
+                            p: { direction: "increase", confidence: "high", reason: hugeText, metric: 20.5 },
+                        },
+                    },
+                },
+            },
+        });
+
+        expect(JSON.stringify(payload).length).toBeLessThanOrEqual(20 * 1024);
+        expect(payload.localAnalysis).toEqual(
+            expect.objectContaining({
+                selectedLogIndexes: [1, 2, 3],
+                aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" },
+                consensusDiagnostics: expect.any(Array),
+                aggregateRecommendations: expect.any(Array),
+                axes: expect.objectContaining({
+                    roll: expect.any(Object),
+                }),
+            }),
+        );
+        expect(payload.inputSources.cli.summary).toBeUndefined();
+        expect(payload.inputSources.bbl.summary).toBeUndefined();
+        expect(payload.localAnalysis.conflictingDiagnostics).toBeUndefined();
     });
 });

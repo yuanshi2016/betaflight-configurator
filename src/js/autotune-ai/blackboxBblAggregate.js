@@ -84,6 +84,14 @@ function mergePriority(currentPriority, nextPriority) {
     return PRIORITY_LEVELS[Math.max(currentLevel, nextLevel)];
 }
 
+function getHighestConfidence(entries) {
+    return entries.reduce((highest, entry) => {
+        const currentLevel = getConfidenceLevel(entry?.advice?.confidence);
+        const highestLevel = getConfidenceLevel(highest);
+        return currentLevel > highestLevel ? entry.advice.confidence : highest;
+    }, "low");
+}
+
 function pickPreferredText(currentValue, nextValue) {
     if (!currentValue) {
         return nextValue;
@@ -212,6 +220,82 @@ function buildAggregateRecommendations(results) {
     return Array.from(grouped.values());
 }
 
+function groupAxisAdvice(results, axisName, category, adviceKey, filterFn = () => true) {
+    const grouped = new Map();
+
+    results.forEach((result) => {
+        const axis = result?.axes?.[axisName];
+        const advice = axis?.[category]?.[adviceKey];
+        if (!advice || !filterFn(axis, advice)) {
+            return;
+        }
+
+        const groupKey = `${axisName}|${category}|${adviceKey}|${advice.direction || "unknown"}`;
+        if (!grouped.has(groupKey)) {
+            grouped.set(groupKey, []);
+        }
+        grouped.get(groupKey).push({ advice, logIndex: result.logIndex });
+    });
+
+    return grouped;
+}
+
+function pickDominantAdvice(groupedEntries) {
+    return [...groupedEntries].sort((left, right) => right[1].length - left[1].length)[0];
+}
+
+function summarizeAxisAdvice(results) {
+    const axes = {};
+    const axisConflicts = [];
+    const categories = [
+        { key: "pidAdvice", adviceKeys: ["p", "i", "d", "ff"] },
+        {
+            key: "filterAdvice",
+            adviceKeys: ["gyroNotch", "dtermLowpass"],
+            filterFn: (axis) => axis?.frequencyDomain?.fftUsable !== false,
+        },
+    ];
+
+    ["roll", "pitch", "yaw"].forEach((axisName) => {
+        const axisSummary = { pidAdvice: {}, filterAdvice: {} };
+        let hasAxisData = false;
+
+        categories.forEach(({ key, adviceKeys, filterFn }) => {
+            adviceKeys.forEach((adviceKey) => {
+                const grouped = groupAxisAdvice(results, axisName, key, adviceKey, filterFn);
+                if (!grouped.size) {
+                    return;
+                }
+
+                const dominant = pickDominantAdvice(grouped.entries());
+                const dominantEntries = dominant[1];
+                const conflictingDirections = [...new Set([...grouped.keys()].map((entry) => entry.split("|").at(-1)))];
+                const representative = cloneValue(dominantEntries[0].advice);
+                representative.supportCount = dominantEntries.length;
+                representative.conflictCount = grouped.size > 1 ? [...grouped.values()].reduce((sum, entries) => sum + entries.length, 0) - dominantEntries.length : 0;
+                representative.sources = dominantEntries.map((entry) => entry.logIndex);
+                representative.confidence = boostConfidence(getHighestConfidence(dominantEntries), dominantEntries.length);
+                axisSummary[key][adviceKey] = representative;
+                hasAxisData = true;
+
+                if (conflictingDirections.length > 1) {
+                    axisConflicts.push({
+                        axis: axisName,
+                        advicePath: `${key}.${adviceKey}`,
+                        conflictingDirections: conflictingDirections.sort(),
+                    });
+                }
+            });
+        });
+
+        if (hasAxisData) {
+            axes[axisName] = axisSummary;
+        }
+    });
+
+    return { axes, axisConflicts };
+}
+
 function summarizeAggregateQuality(selectedResults, usableResults) {
     if (!selectedResults.length) {
         return {
@@ -250,6 +334,7 @@ function summarizeAggregateQuality(selectedResults, usableResults) {
 export function aggregateBblAnalyses(results = []) {
     const usable = results.filter((result) => result?.quality?.status !== QUALITY_STATUS.UNUSABLE);
     const groups = groupDiagnostics(usable);
+    const axisSummary = summarizeAxisAdvice(usable);
 
     return {
         selectedLogIndexes: results.map((result) => result.logIndex),
@@ -258,5 +343,7 @@ export function aggregateBblAnalyses(results = []) {
         conflictingDiagnostics: buildConflictingDiagnostics(groups),
         aggregateRecommendations: buildAggregateRecommendations(usable),
         aggregateQuality: summarizeAggregateQuality(results, usable),
+        axes: axisSummary.axes,
+        axisConflicts: axisSummary.axisConflicts,
     };
 }

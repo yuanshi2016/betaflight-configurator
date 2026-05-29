@@ -233,10 +233,30 @@
                 </div>
             </div>
             <div v-if="bblLogOptions.length" class="autotune-ai-bbl-manager">
-                <div class="autotune-ai-bbl-manager__title">{{ $t("autotuneAiBblLogManager") }}</div>
+                <div class="autotune-ai-bbl-manager__header">
+                    <div class="autotune-ai-bbl-manager__title">{{ $t("autotuneAiBblLogManager") }}</div>
+                    <div class="autotune-ai-bbl-manager__controls">
+                        <UCheckbox
+                            v-model="showOnlyUsableLogs"
+                            :label="$t('autotuneAiShowOnlyUsableLogs')"
+                        />
+                        <div class="autotune-ai-bbl-manager__recommend">
+                            <UButton
+                                size="xs"
+                                variant="soft"
+                                icon="i-lucide-wand-sparkles"
+                                :label="$t('autotuneAiSelectRecommendedLogs')"
+                                @click="selectRecommendedBblLogs"
+                            />
+                            <div class="autotune-ai-bbl-manager__hint">
+                                {{ $t("autotuneAiBblRecommendationHint") }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <div class="autotune-ai-bbl-manager__multi-select">
                     <UCheckbox
-                        v-for="log in bblLogOptions"
+                        v-for="log in filteredBblLogOptions"
                         :key="`multi-${log.index}`"
                         :model-value="sessionState.selectedBblLogIndexes.includes(log.index)"
                         :label="log.label"
@@ -244,15 +264,33 @@
                     />
                 </div>
                 <div class="autotune-ai-bbl-manager__grid">
-                    <UButton
-                        v-for="log in bblLogOptions"
+                    <div
+                        v-for="log in filteredBblLogOptions"
                         :key="log.index"
-                        size="xs"
-                        :variant="log.selected ? 'solid' : 'soft'"
-                        :color="log.selected ? 'primary' : 'neutral'"
-                        :label="log.label"
-                        @click="selectBblLog(log.index)"
-                    />
+                        class="autotune-ai-bbl-manager__log-card"
+                    >
+                        <div class="autotune-ai-bbl-manager__log-header">
+                            <UButton
+                                size="xs"
+                                :variant="log.selected ? 'solid' : 'soft'"
+                                :color="log.selected ? 'primary' : 'neutral'"
+                                :label="log.label"
+                                @click="selectBblLog(log.index)"
+                            />
+                            <span
+                                class="autotune-ai-bbl-manager__log-badge"
+                                :class="qualityBadgeClass(log.qualityStatus)"
+                            >
+                                {{ formatLogQualityStatus(log.qualityStatus) }}
+                            </span>
+                        </div>
+                        <div class="autotune-ai-bbl-manager__log-reason">
+                            {{ formatLogQualityReason(log.qualityReason) }}
+                        </div>
+                        <div class="autotune-ai-bbl-manager__log-evidence">
+                            {{ formatLogEvidenceSummary(log) }}
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -309,6 +347,12 @@
                     class="autotune-ai-local-analysis__reason"
                 >
                     {{ $t("autotuneAiUnsupportedEncoding") }}
+                </div>
+                <div
+                    v-if="sessionState.localBblAnalysis.aggregateQuality.status !== 'usable'"
+                    class="autotune-ai-local-analysis__reason text-warning"
+                >
+                    {{ $t("autotuneAiLocalAnalysisWriteBlocked") }}
                 </div>
             </div>
 
@@ -526,6 +570,7 @@ const selectPortalUi = { content: "z-[2101]" };
 const inputFileRef = ref(null);
 const selectedCraftProfileId = ref("");
 const craftProfileName = ref("");
+const showOnlyUsableLogs = ref(false);
 
 // Write-to-FC state
 const writeState = reactive({ pid: "idle", filters: "idle", rates: "idle" });
@@ -546,6 +591,43 @@ const frameSizeOptions = [
     "8寸",
 ];
 const batteryCellOptions = ["1S", "2S", "3S", "4S", "5S", "6S", "7S", "8S"];
+const LOCAL_ANALYSIS_DIAGNOSTIC_TYPE_KEYS = {
+    pid_time_domain: "autotuneAiLocalAnalysisDiagnosticPidTimeDomain",
+    motor_output_imbalance: "autotuneAiLocalAnalysisDiagnosticMotorOutputImbalance",
+    rates_mismatch: "autotuneAiLocalAnalysisDiagnosticRatesMismatch",
+    filter_frequency_domain: "autotuneAiLocalAnalysisDiagnosticFilterFrequencyDomain",
+};
+const LOCAL_ANALYSIS_RECOMMENDATION_GROUP_KEYS = {
+    data_quality: "autotuneAiDataQuality",
+    mechanical: "autotuneAiMechanicalIssues",
+    rates: "autotuneAiGroupRates",
+    pid: "autotuneAiGroupPid",
+    filters: "autotuneAiGroupFilters",
+};
+const LOCAL_ANALYSIS_RECOMMENDATION_TYPE_KEYS = {
+    collect_better_log: "autotuneAiLocalAnalysisRecommendationCollectBetterLog",
+    inspect_powertrain_balance: "autotuneAiLocalAnalysisRecommendationInspectPowertrainBalance",
+    review_rates_profile: "autotuneAiLocalAnalysisRecommendationReviewRatesProfile",
+};
+const LOCAL_ANALYSIS_EXPLANATION_KEYS = {
+    "Average motor outputs show a sustained spread that suggests balance or mechanical asymmetry.":
+        "autotuneAiLocalAnalysisExplanationMotorOutputImbalance",
+    "Configured rates look aggressive for the declared craft profile and flight style.":
+        "autotuneAiLocalAnalysisExplanationRatesMismatch",
+    "Time-domain tracking error indicates how far the craft is from the requested rate response.":
+        "autotuneAiLocalAnalysisExplanationPidTimeDomain",
+    "Frequency-domain energy highlights resonant peaks and high-frequency D-term content.":
+        "autotuneAiLocalAnalysisExplanationFilterFrequencyDomain",
+    "Capture a longer log with required time, gyro, setpoint, and motor fields before tuning decisions.":
+        "autotuneAiLocalAnalysisExplanationCollectBetterLog",
+    "Check propellers, motor health, frame alignment, and CG before relying on PID changes.":
+        "autotuneAiLocalAnalysisExplanationInspectPowertrainBalance",
+};
+const LOCAL_ANALYSIS_PRIORITY_KEYS = {
+    low: "autotuneAiLocalAnalysisPriorityLow",
+    medium: "autotuneAiLocalAnalysisPriorityMedium",
+    high: "autotuneAiLocalAnalysisPriorityHigh",
+};
 
 const providerOptions = computed(() =>
     PROVIDER_PRESETS.map((preset) => ({
@@ -702,6 +784,11 @@ const bblLogOptions = computed(() =>
     (sessionState.bblSummary?.availableLogs || []).map((log) => ({
         index: log.index,
         selected: log.index === sessionState.bblSummary.selectedLogIndex,
+        qualityStatus: sessionState.localBblAnalysesByLog?.[log.index]?.quality?.status || "unknown",
+        qualityReason: sessionState.localBblAnalysesByLog?.[log.index]?.quality?.reason || "missing_quality",
+        decodedMainFrames: log.decodedMainFrames,
+        corruptFrames: log.corruptFrames,
+        durationUs: log.durationUs,
         label: t("autotuneAiBblLogOption", {
             index: log.index + 1,
             frames: log.decodedMainFrames,
@@ -710,12 +797,42 @@ const bblLogOptions = computed(() =>
     })),
 );
 
+function sortBblLogOptions(left, right) {
+    const rank = {
+        usable: 0,
+        degraded: 1,
+        unusable: 2,
+        unknown: 3,
+    };
+
+    const leftRank = rank[left?.qualityStatus] ?? rank.unknown;
+    const rightRank = rank[right?.qualityStatus] ?? rank.unknown;
+    if (leftRank !== rightRank) {
+        return leftRank - rightRank;
+    }
+
+    return (left?.index ?? 0) - (right?.index ?? 0);
+}
+
+const filteredBblLogOptions = computed(() => {
+    const sorted = [...bblLogOptions.value].sort(sortBblLogOptions);
+    if (!showOnlyUsableLogs.value) {
+        return sorted;
+    }
+
+    return sorted.filter((log) => log.qualityStatus === "usable");
+});
+
 function selectBblLog(index) {
     store.selectBblLog(index);
 }
 
 function toggleBblLogSelection(index) {
     store.toggleBblLogSelection(index);
+}
+
+function selectRecommendedBblLogs() {
+    store.selectRecommendedBblLogs();
 }
 
 function onCraftProfileSelected(profileId) {
@@ -957,6 +1074,36 @@ function formatAggregateQualityStatus(status) {
     );
 }
 
+function formatLogQualityStatus(status) {
+    return formatAggregateQualityStatus(status);
+}
+
+function formatLogQualityReason(reason) {
+    return {
+        insufficient_required_data: t("autotuneAiLogReasonInsufficientRequiredData"),
+        partial_decode_issues: t("autotuneAiLogReasonPartialDecodeIssues"),
+        sufficient_required_data: t("autotuneAiLogReasonSufficientRequiredData"),
+        missing_quality: t("autotuneAiLogReasonMissingQuality"),
+    }[reason] || t("autotuneAiAggregateReasonFallback");
+}
+
+function formatLogEvidenceSummary(log) {
+    const decoded = Number(log?.decodedMainFrames) || 0;
+    const corrupt = Number(log?.corruptFrames) || 0;
+    const seconds = Number.isFinite(Number(log?.durationUs)) ? (Number(log.durationUs) / 1e6).toFixed(1) : "-";
+
+    return `decoded ${decoded} · corrupt ${corrupt} · ${seconds}s`;
+}
+
+function qualityBadgeClass(status) {
+    return {
+        usable: "autotune-ai-bbl-manager__log-badge--usable",
+        degraded: "autotune-ai-bbl-manager__log-badge--degraded",
+        unusable: "autotune-ai-bbl-manager__log-badge--unusable",
+        unknown: "autotune-ai-bbl-manager__log-badge--unknown",
+    }[status || "unknown"];
+}
+
 function formatAggregateQualityReason(reason) {
     return t(
         {
@@ -976,22 +1123,60 @@ function formatSelectedLogs(indexes = []) {
     return indexes.map((index) => index + 1).join(", ");
 }
 
-function formatDiagnosticSummary(diagnostic) {
-    const parts = [diagnostic?.type, diagnostic?.explanation, diagnostic?.confidence].filter(Boolean);
-    if (diagnostic?.sources) {
-        parts.push(`${diagnostic.sources} sources`);
+function localizeLocalAnalysisValue(value, keyMap) {
+    if (!value) {
+        return "";
     }
+
+    const translationKey = keyMap?.[value];
+    if (!translationKey) {
+        return value;
+    }
+
+    const translated = t(translationKey);
+    return translated === translationKey ? value : translated;
+}
+
+function formatLocalAnalysisPriority(priority) {
+    const localizedPriority = localizeLocalAnalysisValue(priority, LOCAL_ANALYSIS_PRIORITY_KEYS);
+    if (!localizedPriority) {
+        return "";
+    }
+
+    return `${t("autotuneAiLocalAnalysisPriority")}: ${localizedPriority}`;
+}
+
+function formatLocalAnalysisSources(sources) {
+    return `${t("autotuneAiLocalAnalysisSources")}: ${sources}`;
+}
+
+function formatDiagnosticSummary(diagnostic) {
+    const parts = [
+        localizeLocalAnalysisValue(diagnostic?.type, LOCAL_ANALYSIS_DIAGNOSTIC_TYPE_KEYS),
+        localizeLocalAnalysisValue(diagnostic?.explanation, LOCAL_ANALYSIS_EXPLANATION_KEYS),
+        diagnostic?.confidence ? t(confidenceLabelKey(diagnostic.confidence)) : "",
+    ].filter(Boolean);
+
+    if (diagnostic?.sources) {
+        parts.push(formatLocalAnalysisSources(diagnostic.sources));
+    }
+
     return parts.join(" - ");
 }
 
 function formatAggregateRecommendation(recommendation) {
-    const parts = [recommendation?.group, recommendation?.type].filter(Boolean);
+    const parts = [
+        localizeLocalAnalysisValue(recommendation?.group, LOCAL_ANALYSIS_RECOMMENDATION_GROUP_KEYS),
+        localizeLocalAnalysisValue(recommendation?.type, LOCAL_ANALYSIS_RECOMMENDATION_TYPE_KEYS),
+    ].filter(Boolean);
+
     if (recommendation?.priority) {
-        parts.push(`priority ${recommendation.priority}`);
+        parts.push(formatLocalAnalysisPriority(recommendation.priority));
     }
     if (recommendation?.explanation) {
-        parts.push(recommendation.explanation);
+        parts.push(localizeLocalAnalysisValue(recommendation?.explanation, LOCAL_ANALYSIS_EXPLANATION_KEYS));
     }
+
     return parts.join(" - ");
 }
 
@@ -1210,10 +1395,96 @@ async function sendFollowUp() {
     font-weight: 700;
 }
 
+.autotune-ai-bbl-manager__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem 0.75rem;
+}
+
+.autotune-ai-bbl-manager__controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: 0.5rem 0.75rem;
+}
+
+.autotune-ai-bbl-manager__recommend {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.2rem;
+}
+
+.autotune-ai-bbl-manager__hint {
+    max-width: 18rem;
+    color: var(--surface-700);
+    font-size: 0.68rem;
+    line-height: 1.35;
+    text-align: right;
+}
+
 .autotune-ai-bbl-manager__grid {
     display: flex;
     flex-wrap: wrap;
     gap: 0.375rem;
+}
+
+.autotune-ai-bbl-manager__log-card {
+    display: flex;
+    min-width: 14rem;
+    flex: 1 1 14rem;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    border: 1px solid var(--surface-300);
+    border-radius: 0.5rem;
+    background: var(--surface-100);
+}
+
+.autotune-ai-bbl-manager__log-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.autotune-ai-bbl-manager__log-badge {
+    flex: 0 0 auto;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.autotune-ai-bbl-manager__log-badge--usable {
+    background: color-mix(in srgb, #1f9d55 18%, transparent);
+    color: #1f9d55;
+}
+
+.autotune-ai-bbl-manager__log-badge--degraded {
+    background: color-mix(in srgb, #d97706 18%, transparent);
+    color: #d97706;
+}
+
+.autotune-ai-bbl-manager__log-badge--unusable {
+    background: color-mix(in srgb, #dc2626 18%, transparent);
+    color: #dc2626;
+}
+
+.autotune-ai-bbl-manager__log-badge--unknown {
+    background: var(--surface-200);
+    color: var(--surface-700);
+}
+
+.autotune-ai-bbl-manager__log-evidence {
+    color: var(--surface-800);
+    font-size: 0.7rem;
+    font-family: var(--font-mono, monospace);
 }
 
 .autotune-ai-bbl-manager__multi-select {
@@ -1352,6 +1623,17 @@ async function sendFollowUp() {
 
     .autotune-ai-profile-bar {
         grid-template-columns: 1fr;
+    }
+
+    .autotune-ai-bbl-manager__controls,
+    .autotune-ai-bbl-manager__recommend {
+        align-items: flex-start;
+        justify-content: flex-start;
+    }
+
+    .autotune-ai-bbl-manager__hint {
+        max-width: none;
+        text-align: left;
     }
 
     .autotune-ai-followup {

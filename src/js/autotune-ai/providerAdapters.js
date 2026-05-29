@@ -27,6 +27,32 @@ const LOCALE_LANGUAGE_NAMES = {
     zh_TW: "Traditional Chinese",
 };
 
+const RESPONSE_CONTRACT = `{
+  "summary": "string",
+  "overallRisk": "low" | "medium" | "high",
+  "groups": {
+    "pid": {
+      "writeable": boolean,
+      "confidence": "low" | "medium" | "high",
+      "explanation": "string",
+      "values": {}
+    },
+    "filters": {
+      "writeable": boolean,
+      "confidence": "low" | "medium" | "high",
+      "explanation": "string",
+      "values": {}
+    },
+    "rates": {
+      "writeable": boolean,
+      "confidence": "low" | "medium" | "high",
+      "explanation": "string",
+      "values": {}
+    }
+  },
+  "flightTestNotes": "string"
+}`;
+
 function getResponseLanguage(locale = i18n.getCurrentLocale()) {
     const normalized = String(locale || "en").replace(/-/gu, "_");
 
@@ -42,9 +68,16 @@ function createSystemPrompt(locale) {
         "Treat localAnalysis as the primary technical evidence for ordinary Blackbox logs.",
         "Do not contradict localAnalysis unless you explicitly state uncertainty and limitations.",
         "Use local diagnostics and local recommendations to explain your conclusion.",
+        "If localAnalysis is missing or not usable, do not return writeable recommendations.",
+        "Explain the evidence limitation and keep every group writeable=false.",
         "Do not output CLI commands.",
         "Do not recommend raw FC.PIDS writes.",
         "Keep JSON property names and configuration keys exactly as requested.",
+        "Return exactly this JSON shape:",
+        RESPONSE_CONTRACT,
+        "Do not return error fields or diagnostics/recommendations arrays.",
+        "Only set writeable=true when localAnalysis provides enough concrete evidence for a specific safe config change.",
+        "If localAnalysis only provides direction-only or qualitative evidence, keep writeable=false and explain the limitation.",
         `Respond in ${responseLanguage}.`,
         `Keep all user-facing summary, explanations, and flight test notes in ${responseLanguage}.`,
         "For initial analysis, return only JSON matching the requested response contract.",
@@ -61,6 +94,8 @@ function createUserPrompt(payload, locale) {
 
     return [
         `Analyze this compact Betaflight tuning payload and return JSON with summary, overallRisk, groups.pid, groups.filters, groups.rates, and flightTestNotes. Respond in ${responseLanguage}.`,
+        "Return exactly this JSON shape:",
+        RESPONSE_CONTRACT,
         JSON.stringify(payload),
     ].join("\n\n");
 }

@@ -155,6 +155,7 @@ describe("autotune AI store defaults", () => {
         expect(storeSource).toContain("selectedBblLogIndexes");
         expect(storeSource).toContain("localBblAnalysis");
         expect(storeSource).toContain("localBblAnalysesByLog");
+        expect(storeSource).toContain("selectRecommendedBblLogs");
         expect(storeSource).toContain("function refreshLocalBblAnalysis()");
         expect(storeSource).toContain("function toggleBblLogSelection(index)");
         expect(storeSource).toContain("localBblAnalysis: sessionState.localBblAnalysis");
@@ -281,6 +282,150 @@ describe("autotune AI store defaults", () => {
         expect(store.sessionState.selectedBblLogIndexes).toEqual([2]);
     });
 
+    it("selects recommended bbl logs by preferring usable logs over degraded ones", async () => {
+        const store = useAutotuneAiStore();
+        mockDetectAutotuneInputSource.mockReturnValue("bbl");
+        mockBuildBblSummary.mockImplementation(({ fileName = "logs.bbl", selectedLogIndex }) =>
+            createBblSummary({
+                fileName,
+                selectedLogIndex: selectedLogIndex ?? 0,
+                availableIndexes: [0, 1, 2, 3, 4, 5],
+                marker: `stats-${selectedLogIndex ?? 0}`,
+            }),
+        );
+        mockAnalyzeBblLog.mockImplementation(({ summary }) => ({
+            quality: {
+                status:
+                    summary.selectedLogIndex === 0
+                        ? "unusable"
+                        : summary.selectedLogIndex === 1 ? "degraded" : "usable",
+                reason: `quality-${summary.selectedLogIndex}`,
+            },
+            diagnostics: [],
+            recommendations: [],
+        }));
+
+        await store.importInputFile(createBblFile());
+
+        expect(store.selectRecommendedBblLogs()).toEqual([3, 4, 5]);
+        expect(store.sessionState.selectedBblLogIndexes).toEqual([3, 4, 5]);
+    });
+
+    it("prefers longer usable bbl logs when choosing the recommended subset", async () => {
+        const store = useAutotuneAiStore();
+        mockDetectAutotuneInputSource.mockReturnValue("bbl");
+        mockBuildBblSummary.mockImplementation(({ fileName = "logs.bbl", selectedLogIndex }) => ({
+            ...createBblSummary({
+                fileName,
+                selectedLogIndex: selectedLogIndex ?? 0,
+                availableIndexes: [0, 1, 2, 3, 4],
+                marker: `stats-${selectedLogIndex ?? 0}`,
+            }),
+            availableLogs: [
+                { index: 0, decodedMainFrames: 100, durationUs: 300_000, requiredColumns: { time: true, gyro: true, setpoint: true, motor: true } },
+                { index: 1, decodedMainFrames: 100, durationUs: 900_000, requiredColumns: { time: true, gyro: true, setpoint: true, motor: true } },
+                { index: 2, decodedMainFrames: 100, durationUs: 600_000, requiredColumns: { time: true, gyro: true, setpoint: true, motor: true } },
+                { index: 3, decodedMainFrames: 100, durationUs: 1_200_000, requiredColumns: { time: true, gyro: true, setpoint: true, motor: true } },
+                { index: 4, decodedMainFrames: 100, durationUs: 400_000, requiredColumns: { time: true, gyro: true, setpoint: true, motor: true } },
+            ],
+        }));
+        mockAnalyzeBblLog.mockImplementation(({ summary }) => ({
+            quality: {
+                status: summary.selectedLogIndex === 4 ? "degraded" : "usable",
+                reason: `quality-${summary.selectedLogIndex}`,
+            },
+            diagnostics: [],
+            recommendations: [],
+        }));
+
+        await store.importInputFile(createBblFile());
+
+        expect(store.selectRecommendedBblLogs()).toEqual([1, 2, 3]);
+        expect(store.sessionState.selectedBblLogIndexes).toEqual([1, 2, 3]);
+    });
+
+    it("prefers healthier decode ratios over raw duration when ranking usable bbl logs", async () => {
+        const store = useAutotuneAiStore();
+        mockDetectAutotuneInputSource.mockReturnValue("bbl");
+        mockBuildBblSummary.mockImplementation(({ fileName = "logs.bbl", selectedLogIndex }) => ({
+            ...createBblSummary({
+                fileName,
+                selectedLogIndex: selectedLogIndex ?? 0,
+                availableIndexes: [0, 1, 2, 3],
+                marker: `stats-${selectedLogIndex ?? 0}`,
+            }),
+            availableLogs: [
+                {
+                    index: 0,
+                    decodedMainFrames: 10_000,
+                    corruptFrames: 9_000,
+                    durationUs: 2_000_000,
+                    requiredColumns: { time: true, gyro: true, setpoint: true, motor: true },
+                },
+                {
+                    index: 1,
+                    decodedMainFrames: 10_000,
+                    corruptFrames: 500,
+                    durationUs: 1_000_000,
+                    requiredColumns: { time: true, gyro: true, setpoint: true, motor: true },
+                },
+                {
+                    index: 2,
+                    decodedMainFrames: 10_000,
+                    corruptFrames: 1_000,
+                    durationUs: 1_500_000,
+                    requiredColumns: { time: true, gyro: true, setpoint: true, motor: true },
+                },
+                {
+                    index: 3,
+                    decodedMainFrames: 10_000,
+                    corruptFrames: 0,
+                    durationUs: 800_000,
+                    requiredColumns: { time: true, gyro: true, setpoint: true, motor: true },
+                },
+            ],
+        }));
+        mockAnalyzeBblLog.mockImplementation(({ summary }) => ({
+            quality: {
+                status: "usable",
+                reason: `quality-${summary.selectedLogIndex}`,
+            },
+            diagnostics: [],
+            recommendations: [],
+        }));
+
+        await store.importInputFile(createBblFile());
+
+        expect(store.selectRecommendedBblLogs()).toEqual([1, 2, 3]);
+        expect(store.sessionState.selectedBblLogIndexes).toEqual([1, 2, 3]);
+    });
+
+    it("falls back to degraded bbl logs when no usable logs are available", async () => {
+        const store = useAutotuneAiStore();
+        mockDetectAutotuneInputSource.mockReturnValue("bbl");
+        mockBuildBblSummary.mockImplementation(({ fileName = "logs.bbl", selectedLogIndex }) =>
+            createBblSummary({
+                fileName,
+                selectedLogIndex: selectedLogIndex ?? 0,
+                availableIndexes: [0, 1],
+                marker: `stats-${selectedLogIndex ?? 0}`,
+            }),
+        );
+        mockAnalyzeBblLog.mockImplementation(({ summary }) => ({
+            quality: {
+                status: summary.selectedLogIndex === 0 ? "unusable" : "degraded",
+                reason: `quality-${summary.selectedLogIndex}`,
+            },
+            diagnostics: [],
+            recommendations: [],
+        }));
+
+        await store.importInputFile(createBblFile());
+
+        expect(store.selectRecommendedBblLogs()).toEqual([1]);
+        expect(store.sessionState.selectedBblLogIndexes).toEqual([1]);
+    });
+
     it("uses current FC rates before parsed CLI rates for local analysis config", async () => {
         mockFc.RC_TUNING = {
             roll_rate: 900,
@@ -357,7 +502,9 @@ describe("autotune AI store defaults", () => {
         );
         const providerHistory = mockExplainTuningAnalysis.mock.calls[0][2];
         expect(providerHistory.length).toBeLessThanOrEqual(store.sessionState.conversationHistory.length);
-        expect(providerHistory[0].content).not.toBe(store.sessionState.conversationHistory[0].content);
+        expect(store.sessionState.conversationHistory[0].content).toBe(firstTurn);
+        expect(store.sessionState.conversationHistory[1].content).toBe(assistantReply);
+        expect(Array.isArray(providerHistory)).toBe(true);
     });
 
     it("clears stale AI output when importing a new input file", async () => {
@@ -421,5 +568,136 @@ describe("autotune AI store defaults", () => {
         expect(store.sessionState.conversationTrimmed).toBe(false);
         expect(store.sessionState.followUpInput).toBe("");
         expect(store.sessionState.followUpState).toBe("idle");
+    });
+
+    it("passes the built payload into response parsing so writeability gating can use local analysis quality", async () => {
+        const store = useAutotuneAiStore();
+        mockParseAiResponse.mockReturnValue({
+            summary: "parsed",
+            overallRisk: "medium",
+            groups: {},
+            flightTestNotes: "",
+        });
+        mockBuildAiPayload.mockReturnValue({
+            craftContext: { craftType: "long-range" },
+            localAnalysis: {
+                aggregateQuality: {
+                    status: "degraded",
+                    reason: "includes_unusable_logs",
+                },
+            },
+        });
+        mockExplainTuningAnalysis.mockResolvedValue(
+            JSON.stringify({
+                summary: "Lower filtering.",
+                overallRisk: "medium",
+                groups: {
+                    filters: {
+                        writeable: true,
+                        confidence: "high",
+                        explanation: "Model wants to write filters.",
+                        values: {
+                            slider_gyro_filter_multiplier: 80,
+                        },
+                    },
+                },
+            }),
+        );
+
+        Object.assign(store.craftContext, {
+            craftType: "long-range",
+            frameSize: "8",
+            allUpWeight: "2000",
+            prop: "8x3.7x3",
+            motorKv: "1100",
+            battery: "6S",
+            flightStyle: "smooth",
+            riskPreference: "balanced",
+        });
+        store.providerSettings.apiKey = "secret";
+
+        await store.analyze();
+
+        expect(mockParseAiResponse).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({
+                localAnalysis: {
+                    aggregateQuality: {
+                        status: "degraded",
+                        reason: "includes_unusable_logs",
+                    },
+                },
+            }),
+        );
+    });
+
+    it("blocks AI requests before sending when local bbl analysis quality is degraded", async () => {
+        const store = useAutotuneAiStore();
+        Object.assign(store.craftContext, {
+            craftType: "long-range",
+            frameSize: "8",
+            allUpWeight: "2000",
+            prop: "8x3.7x3",
+            motorKv: "1100",
+            battery: "6S",
+            flightStyle: "smooth",
+            riskPreference: "balanced",
+        });
+        store.providerSettings.apiKey = "secret";
+        store.sessionState.localBblAnalysis = {
+            aggregateQuality: {
+                status: "degraded",
+                reason: "includes_unusable_logs",
+            },
+            selectedLogIndexes: [0, 1],
+        };
+        store.sessionState.bblSummary = createBblSummary();
+
+        await expect(store.analyze()).rejects.toThrow("Selected BBL logs include unusable local evidence.");
+        expect(mockExplainTuningAnalysis).not.toHaveBeenCalled();
+        expect(mockBuildAiPayload).not.toHaveBeenCalled();
+        expect(store.sessionState.requestState).toBe("error");
+        expect(store.sessionState.lastError).toBe(
+            "Selected BBL logs include unusable local evidence. Re-select cleaner logs before AI analysis.",
+        );
+    });
+
+    it("blocks AI requests when a BBL source is present but localAnalysis is missing from the payload", async () => {
+        const store = useAutotuneAiStore();
+        Object.assign(store.craftContext, {
+            craftType: "long-range",
+            frameSize: "8",
+            allUpWeight: "2000",
+            prop: "8x3.7x3",
+            motorKv: "1100",
+            battery: "6S",
+            flightStyle: "smooth",
+            riskPreference: "balanced",
+        });
+        store.providerSettings.apiKey = "secret";
+        store.sessionState.bblSummary = createBblSummary();
+        store.sessionState.localBblAnalysis = {
+            aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" },
+            selectedLogIndexes: [0],
+        };
+        mockBuildAiPayload.mockReturnValue({
+            sourceSummary: {
+                hasBbl: true,
+                hasCli: true,
+            },
+            inputSources: {
+                cli: { present: true },
+                bbl: { present: true },
+            },
+            localAnalysis: undefined,
+        });
+
+        await expect(store.analyze()).rejects.toThrow(
+            "Local BBL analysis was not preserved in the AI payload. Reduce payload size or reselect logs.",
+        );
+        expect(mockExplainTuningAnalysis).not.toHaveBeenCalled();
+        expect(store.sessionState.lastError).toBe(
+            "Local BBL analysis was not preserved in the AI payload. Reduce payload size or reselect logs.",
+        );
     });
 });

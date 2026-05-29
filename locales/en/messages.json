@@ -9467,15 +9467,58 @@
     "autotuneAiSingletonDiagnostics": { "message": "Singleton diagnostics" },
     "autotuneAiAggregateRecommendations": { "message": "Aggregate recommendations" },
     "autotuneAiSelectedLogs": { "message": "Selected logs" },
+    "autotuneAiLocalAnalysisSources": { "message": "Source logs" },
+    "autotuneAiLocalAnalysisPriority": { "message": "Recommendation priority" },
+    "autotuneAiLocalAnalysisPriorityLow": { "message": "Low" },
+    "autotuneAiLocalAnalysisPriorityMedium": { "message": "Medium" },
+    "autotuneAiLocalAnalysisPriorityHigh": { "message": "High" },
+    "autotuneAiLocalAnalysisDiagnosticPidTimeDomain": { "message": "PID time-domain tracking error" },
+    "autotuneAiLocalAnalysisDiagnosticMotorOutputImbalance": { "message": "Motor output imbalance" },
+    "autotuneAiLocalAnalysisDiagnosticRatesMismatch": { "message": "Rates profile mismatch" },
+    "autotuneAiLocalAnalysisDiagnosticFilterFrequencyDomain": { "message": "Filter frequency-domain energy" },
+    "autotuneAiLocalAnalysisRecommendationCollectBetterLog": { "message": "Collect a better log" },
+    "autotuneAiLocalAnalysisRecommendationInspectPowertrainBalance": { "message": "Inspect powertrain balance" },
+    "autotuneAiLocalAnalysisRecommendationReviewRatesProfile": { "message": "Review rates profile" },
+    "autotuneAiLocalAnalysisExplanationPidTimeDomain": {
+        "message": "Time-domain tracking error indicates how closely the craft follows the requested angular-rate response."
+    },
+    "autotuneAiLocalAnalysisExplanationMotorOutputImbalance": {
+        "message": "Average motor outputs show sustained spread, suggesting balance or mechanical asymmetry."
+    },
+    "autotuneAiLocalAnalysisExplanationRatesMismatch": {
+        "message": "Configured rates look aggressive for the declared craft profile and flight style."
+    },
+    "autotuneAiLocalAnalysisExplanationFilterFrequencyDomain": {
+        "message": "Frequency-domain energy highlights resonance peaks and elevated high-frequency D-term content."
+    },
+    "autotuneAiLocalAnalysisExplanationCollectBetterLog": {
+        "message": "Capture a longer log with required time, gyro, setpoint, and motor fields before tuning decisions."
+    },
+    "autotuneAiLocalAnalysisExplanationInspectPowertrainBalance": {
+        "message": "Check propellers, motor health, frame alignment, and CG before relying on PID changes."
+    },
+    "autotuneAiSelectRecommendedLogs": { "message": "Select recommended logs" },
+    "autotuneAiBblRecommendationHint": { "message": "Recommended picks prefer usable logs first, then cleaner decoding, then longer duration." },
+    "autotuneAiShowOnlyUsableLogs": { "message": "Show only usable logs" },
     "autotuneAiUnsupportedEncoding": { "message": "Unsupported encoded fields are present." },
+    "autotuneAiLocalAnalysisWriteBlocked": {
+        "message": "Local BBL evidence is not usable, so AI recommendations are shown as explanation only and cannot be written to the FC."
+    },
     "autotuneAiAggregateQualityUsable": { "message": "Ready for AI review" },
     "autotuneAiAggregateQualityDegraded": { "message": "Usable with caution" },
     "autotuneAiAggregateQualityUnusable": { "message": "Not usable yet" },
     "autotuneAiAggregateQualityUnknown": { "message": "Quality unknown" },
     "autotuneAiAggregateReasonAllSelectedLogsUsable": { "message": "Selected logs are aligned and suitable for combined analysis." },
+    "autotuneAiAggregateReasonIncludesUnusableLogs": {
+        "message": "Some selected logs are unusable, so AI analysis is blocked until cleaner logs are selected."
+    },
     "autotuneAiAggregateReasonIncludesDegradedLogs": { "message": "Some selected logs are weaker, so treat the aggregate result more cautiously." },
     "autotuneAiAggregateReasonNoUsableLogs": { "message": "No selected logs produced a usable combined analysis." },
     "autotuneAiAggregateReasonFallback": { "message": "Local aggregate analysis is available for the selected logs." },
+    "autotuneAiLogReasonInsufficientRequiredData": { "message": "Missing required data or too little valid duration." },
+    "autotuneAiLogReasonPartialDecodeIssues": { "message": "Decoded with corruption or unsupported frame issues." },
+    "autotuneAiLogReasonSufficientRequiredData": { "message": "Required local evidence is present." },
+    "autotuneAiLogReasonMissingQuality": { "message": "Local quality reason is unavailable." },
     "autotuneAiRequiredBadge": { "message": "Required" },
     "autotuneAiCraftFreestyle": { "message": "Freestyle" },
     "autotuneAiCraftRacing": { "message": "Racing" },

@@ -1,6 +1,36 @@
 import { describe, expect, it } from "vitest";
 import { analyzeBblLog } from "../../../src/js/autotune-ai/blackboxBblAnalysis";
 
+function buildAxisSeries({ length, sampleRateHz, setpointValue, gyroValue, dtermValue = 0, peakHz = null, peakAmplitude = 0 }) {
+    const dtUs = Math.round(1_000_000 / sampleRateHz);
+    return {
+        timeUs: Array.from({ length }, (_, index) => index * dtUs),
+        setpoint: Array.from({ length }, (_, index) => {
+            if (index < length / 4) {
+                return 0;
+            }
+            if (index < length / 2) {
+                return setpointValue;
+            }
+            return 0;
+        }),
+        gyro: Array.from({ length }, (_, index) => {
+            const sinusoid = peakHz ? Math.sin((2 * Math.PI * peakHz * index) / sampleRateHz) * peakAmplitude : 0;
+            if (index < length / 4) {
+                return sinusoid;
+            }
+            if (index < length / 2) {
+                return gyroValue + sinusoid;
+            }
+            return sinusoid;
+        }),
+        dterm: Array.from({ length }, (_, index) => {
+            const highFreq = Math.sin((2 * Math.PI * 220 * index) / sampleRateHz) * dtermValue;
+            return highFreq;
+        }),
+    };
+}
+
 describe("autotune AI ordinary BBL analysis", () => {
     it("classifies a log with strong motor imbalance as usable and reports a motor imbalance diagnostic", () => {
         const result = analyzeBblLog({
@@ -55,7 +85,7 @@ describe("autotune AI ordinary BBL analysis", () => {
                         3: 1440,
                     },
                     meanSpread: 160,
-                    imbalanceRatio: 0.1046,
+                    imbalanceRatio: 0.1053,
                 },
             },
         ]);
@@ -278,6 +308,115 @@ describe("autotune AI ordinary BBL analysis", () => {
                 reason: "partial_decode_issues",
             }),
         );
+    });
+
+    it("computes axis time-domain and frequency-domain advice from unified series input", () => {
+        const result = analyzeBblLog({
+            summary: {
+                samples: {
+                    decodedMainFrames: 256,
+                    corruptFrames: 0,
+                    unsupportedEncodedFrames: 0,
+                    durationUs: 255_000,
+                },
+                fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true, debug: true } },
+                fieldStats: {
+                    motor: {
+                        0: { mean: 1500, count: 256 },
+                        1: { mean: 1501, count: 256 },
+                        2: { mean: 1499, count: 256 },
+                        3: { mean: 1500, count: 256 },
+                    },
+                },
+                analysisInput: {
+                    sourceType: "bbl",
+                    craftClass: "5-6in",
+                    axes: {
+                        roll: buildAxisSeries({
+                            length: 256,
+                            sampleRateHz: 1000,
+                            setpointValue: 100,
+                            gyroValue: 55,
+                            dtermValue: 20,
+                            peakHz: 180,
+                            peakAmplitude: 35,
+                        }),
+                    },
+                },
+            },
+            craftContext: { craftType: "freestyle", frameSize: "5" },
+        });
+
+        expect(result.axes.roll.timeDomain).toMatchObject({
+            rmsError: expect.any(Number),
+            maxError: expect.any(Number),
+            meanErrMoving: expect.any(Number),
+            meanErrSteady: expect.any(Number),
+        });
+        expect(result.axes.roll.timeDomain.meanErrMoving).toBeGreaterThan(40);
+        expect(result.axes.roll.timeDomain.meanErrSteady).toBeLessThan(5);
+        expect(result.axes.roll.frequencyDomain).toMatchObject({
+            fftUsable: true,
+            sampleRateHz: expect.any(Number),
+            gyroPeakFreqHz: expect.any(Number),
+            gyroPeakMagnitude: expect.any(Number),
+            dtermHighFreqAvg: expect.any(Number),
+        });
+        expect(result.axes.roll.frequencyDomain.gyroPeakFreqHz).toBeGreaterThan(160);
+        expect(result.axes.roll.frequencyDomain.gyroPeakFreqHz).toBeLessThan(200);
+        expect(result.axes.roll.pidAdvice).toMatchObject({
+            p: expect.objectContaining({ direction: "increase" }),
+            i: expect.objectContaining({ direction: "healthy" }),
+            d: expect.objectContaining({ direction: "increase" }),
+            ff: expect.objectContaining({ direction: expect.any(String) }),
+        });
+        expect(result.axes.roll.filterAdvice).toMatchObject({
+            gyroNotch: expect.objectContaining({ direction: "enable" }),
+            dtermLowpass: expect.objectContaining({ direction: "lower" }),
+        });
+        expect(result.diagnostics).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ type: "pid_time_domain" }),
+                expect.objectContaining({ type: "filter_frequency_domain" }),
+            ]),
+        );
+    });
+
+    it("returns unusable FFT status without filter advice when the series is too short", () => {
+        const result = analyzeBblLog({
+            summary: {
+                samples: {
+                    decodedMainFrames: 40,
+                    corruptFrames: 0,
+                    unsupportedEncodedFrames: 0,
+                    durationUs: 39_000,
+                },
+                fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true, debug: true } },
+                fieldStats: {
+                    motor: {
+                        0: { mean: 1500, count: 40 },
+                        1: { mean: 1500, count: 40 },
+                    },
+                },
+                analysisInput: {
+                    sourceType: "csv",
+                    axes: {
+                        roll: {
+                            timeUs: Array.from({ length: 40 }, (_, index) => index * 1000),
+                            gyro: Array.from({ length: 40 }, () => 5),
+                            setpoint: Array.from({ length: 40 }, () => 10),
+                        },
+                    },
+                },
+            },
+        });
+
+        expect(result.axes.roll.frequencyDomain).toEqual({
+            fftUsable: false,
+            reason: "insufficient_samples",
+        });
+        expect(result.axes.roll.filterAdvice).toEqual({});
+        expect(result.diagnostics.find((item) => item.type === "filter_frequency_domain")).toBeUndefined();
     });
 
     it("does not report motor imbalance when spread stays below the medium threshold", () => {

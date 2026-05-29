@@ -204,6 +204,126 @@ function summarizeRecommendationItem(item) {
     );
 }
 
+function summarizeAxisAdviceItem(item) {
+    return Object.fromEntries(
+        Object.entries({
+            direction: item?.direction,
+            confidence: item?.confidence,
+            reason: trimText(item?.reason, MAX_NESTED_TEXT_LENGTH),
+            targetHz: item?.targetHz,
+            metric: item?.metric,
+        }).filter(([, value]) => value !== undefined),
+    );
+}
+
+function summarizeAxisAnalysis(axes) {
+    if (!axes || typeof axes !== "object") {
+        return undefined;
+    }
+
+    const summarized = Object.fromEntries(
+        Object.entries(axes)
+            .map(([axisName, axisValue]) => [
+                axisName,
+                Object.fromEntries(
+                    Object.entries({
+                        timeDomain: pickBoundedObject(axisValue?.timeDomain, 6),
+                        frequencyDomain: pickBoundedObject(axisValue?.frequencyDomain, 6),
+                        pidAdvice: axisValue?.pidAdvice
+                            ? Object.fromEntries(
+                                  Object.entries(axisValue.pidAdvice)
+                                      .map(([key, advice]) => [key, summarizeAxisAdviceItem(advice)])
+                                      .filter(([, advice]) => advice && Object.keys(advice).length > 0),
+                              )
+                            : undefined,
+                        filterAdvice: axisValue?.filterAdvice
+                            ? Object.fromEntries(
+                                  Object.entries(axisValue.filterAdvice)
+                                      .map(([key, advice]) => [key, summarizeAxisAdviceItem(advice)])
+                                      .filter(([, advice]) => advice && Object.keys(advice).length > 0),
+                              )
+                            : undefined,
+                    }).filter(([, value]) => value !== undefined && (!Array.isArray(value) || value.length)),
+                ),
+            ])
+            .filter(([, value]) => Object.keys(value).length > 0),
+    );
+
+    return Object.keys(summarized).length ? summarized : undefined;
+}
+
+function summarizeAxisAnalysisLite(axes) {
+    if (!axes || typeof axes !== "object") {
+        return undefined;
+    }
+
+    const summarized = Object.fromEntries(
+        Object.entries(axes)
+            .map(([axisName, axisValue]) => [
+                axisName,
+                Object.fromEntries(
+                    Object.entries({
+                        timeDomain: pickBoundedObject(axisValue?.timeDomain, 4),
+                        frequencyDomain: pickBoundedObject(axisValue?.frequencyDomain, 4),
+                        pidAdvice: axisValue?.pidAdvice
+                            ? Object.fromEntries(
+                                  Object.entries(axisValue.pidAdvice)
+                                      .map(([key, advice]) => [key, summarizeAxisAdviceItem(advice)])
+                                      .filter(([, advice]) => advice && Object.keys(advice).length > 0),
+                              )
+                            : undefined,
+                        filterAdvice: axisValue?.filterAdvice
+                            ? Object.fromEntries(
+                                  Object.entries(axisValue.filterAdvice)
+                                      .map(([key, advice]) => [key, summarizeAxisAdviceItem(advice)])
+                                      .filter(([, advice]) => advice && Object.keys(advice).length > 0),
+                              )
+                            : undefined,
+                    }).filter(([, value]) => value !== undefined && (!Array.isArray(value) || value.length)),
+                ),
+            ])
+            .filter(([, value]) => Object.keys(value).length > 0),
+    );
+
+    return Object.keys(summarized).length ? summarized : undefined;
+}
+
+function summarizeLocalBblAnalysisForLimit(localBblAnalysis) {
+    if (!localBblAnalysis || typeof localBblAnalysis !== "object") {
+        return null;
+    }
+
+    const aggregateQuality =
+        localBblAnalysis.aggregateQuality && typeof localBblAnalysis.aggregateQuality === "object"
+            ? Object.fromEntries(
+                  Object.entries({
+                      status: localBblAnalysis.aggregateQuality.status,
+                      reason: trimText(localBblAnalysis.aggregateQuality.reason, MAX_QUALITY_REASON_LENGTH),
+                  }).filter(([, value]) => value !== undefined),
+              )
+            : undefined;
+
+    const summary = {
+        selectedLogIndexes: Array.isArray(localBblAnalysis.selectedLogIndexes) ? [...localBblAnalysis.selectedLogIndexes] : undefined,
+        aggregateQuality,
+        consensusDiagnostics: Array.isArray(localBblAnalysis.consensusDiagnostics)
+            ? localBblAnalysis.consensusDiagnostics
+                  .slice(0, MAX_LOCAL_ANALYSIS_ITEMS)
+                  .map((item) => summarizeDiagnosticItem(item))
+                  .filter((item) => item && Object.keys(item).length > 0)
+            : undefined,
+        aggregateRecommendations: Array.isArray(localBblAnalysis.aggregateRecommendations)
+            ? localBblAnalysis.aggregateRecommendations
+                  .slice(0, MAX_LOCAL_ANALYSIS_ITEMS)
+                  .map((item) => summarizeRecommendationItem(item))
+                  .filter((item) => item && Object.keys(item).length > 0)
+            : undefined,
+        axes: summarizeAxisAnalysisLite(localBblAnalysis.axes),
+    };
+
+    return Object.fromEntries(Object.entries(summary).filter(([, value]) => value !== undefined));
+}
+
 function summarizeLocalBblAnalysis(localBblAnalysis) {
     if (!localBblAnalysis || typeof localBblAnalysis !== "object") {
         return null;
@@ -240,6 +360,7 @@ function summarizeLocalBblAnalysis(localBblAnalysis) {
                   .map((item) => summarizeRecommendationItem(item))
                   .filter((item) => item && Object.keys(item).length > 0)
             : undefined,
+        axes: summarizeAxisAnalysis(localBblAnalysis.axes),
     };
 
     return Object.fromEntries(Object.entries(summary).filter(([, value]) => value !== undefined));
@@ -255,54 +376,6 @@ function enforcePayloadLimit(payload) {
         {
             ...payload,
             dynamicAnalysis: { axes: {} },
-            localAnalysis: payload.localAnalysis
-                ? {
-                      selectedLogIndexes: payload.localAnalysis.selectedLogIndexes,
-                      aggregateQuality: payload.localAnalysis.aggregateQuality,
-                  }
-                : undefined,
-        },
-        {
-            ...payload,
-            dynamicAnalysis: { axes: {} },
-            localAnalysis: undefined,
-            staticConfig: {
-                ...payload.staticConfig,
-                cli: undefined,
-            },
-            inputSources: {
-                ...payload.inputSources,
-                cli: {
-                    ...payload.inputSources?.cli,
-                    summary: undefined,
-                },
-            },
-        },
-        {
-            ...payload,
-            dynamicAnalysis: { axes: {} },
-            localAnalysis: undefined,
-            staticConfig: {
-                ...payload.staticConfig,
-                cli: undefined,
-                csv: undefined,
-            },
-            inputSources: {
-                ...payload.inputSources,
-                cli: {
-                    ...payload.inputSources?.cli,
-                    summary: undefined,
-                },
-                csv: {
-                    ...payload.inputSources?.csv,
-                    summary: undefined,
-                },
-            },
-        },
-        {
-            ...payload,
-            dynamicAnalysis: { axes: {} },
-            localAnalysis: undefined,
             staticConfig: {
                 ...payload.staticConfig,
                 cli: undefined,
@@ -324,6 +397,64 @@ function enforcePayloadLimit(payload) {
                     summary: undefined,
                 },
             },
+            localAnalysis: summarizeLocalBblAnalysisForLimit(payload.localAnalysis) || undefined,
+        },
+        {
+            ...payload,
+            dynamicAnalysis: { axes: {} },
+            staticConfig: {
+                ...payload.staticConfig,
+                cli: undefined,
+                csv: undefined,
+                bbl: undefined,
+            },
+            inputSources: {
+                ...payload.inputSources,
+                cli: {
+                    ...payload.inputSources?.cli,
+                    summary: undefined,
+                },
+                csv: {
+                    ...payload.inputSources?.csv,
+                    summary: undefined,
+                },
+                bbl: {
+                    ...payload.inputSources?.bbl,
+                    summary: undefined,
+                },
+            },
+            localAnalysis: payload.localAnalysis
+                ? {
+                      selectedLogIndexes: payload.localAnalysis.selectedLogIndexes,
+                      aggregateQuality: payload.localAnalysis.aggregateQuality,
+                  }
+                : undefined,
+        },
+        {
+            ...payload,
+            dynamicAnalysis: { axes: {} },
+            staticConfig: {
+                ...payload.staticConfig,
+                cli: undefined,
+                csv: undefined,
+                bbl: undefined,
+            },
+            inputSources: {
+                ...payload.inputSources,
+                cli: {
+                    ...payload.inputSources?.cli,
+                    summary: undefined,
+                },
+                csv: {
+                    ...payload.inputSources?.csv,
+                    summary: undefined,
+                },
+                bbl: {
+                    ...payload.inputSources?.bbl,
+                    summary: undefined,
+                },
+            },
+            localAnalysis: undefined,
         },
     ];
 

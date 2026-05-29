@@ -4591,21 +4591,64 @@
     "autotuneAiSectionOptionalContext": { "message": "選填資訊" },
     "autotuneAiSectionInputSource": { "message": "輸入來源" },
     "autotuneAiSectionRecommendations": { "message": "調參建議" },
-    "autotuneAiLocalAnalysis": { "message": "本地分析" },
+    "autotuneAiLocalAnalysis": { "message": "本地黑盒分析" },
     "autotuneAiDataQuality": { "message": "資料品質" },
     "autotuneAiDiagnostics": { "message": "診斷結果" },
     "autotuneAiSingletonDiagnostics": { "message": "單日誌診斷" },
-    "autotuneAiAggregateRecommendations": { "message": "聚合建議" },
+    "autotuneAiAggregateRecommendations": { "message": "彙整建議" },
     "autotuneAiSelectedLogs": { "message": "已選日誌" },
+    "autotuneAiLocalAnalysisSources": { "message": "來源日誌" },
+    "autotuneAiLocalAnalysisPriority": { "message": "建議優先級" },
+    "autotuneAiLocalAnalysisPriorityLow": { "message": "低" },
+    "autotuneAiLocalAnalysisPriorityMedium": { "message": "中" },
+    "autotuneAiLocalAnalysisPriorityHigh": { "message": "高" },
+    "autotuneAiLocalAnalysisDiagnosticPidTimeDomain": { "message": "PID 時域追蹤誤差" },
+    "autotuneAiLocalAnalysisDiagnosticMotorOutputImbalance": { "message": "馬達輸出不均衡" },
+    "autotuneAiLocalAnalysisDiagnosticRatesMismatch": { "message": "Rates 設定不相符" },
+    "autotuneAiLocalAnalysisDiagnosticFilterFrequencyDomain": { "message": "濾波頻域能量" },
+    "autotuneAiLocalAnalysisRecommendationCollectBetterLog": { "message": "收集更好的日誌" },
+    "autotuneAiLocalAnalysisRecommendationInspectPowertrainBalance": { "message": "檢查動力系統平衡" },
+    "autotuneAiLocalAnalysisRecommendationReviewRatesProfile": { "message": "複查 Rates 設定" },
+    "autotuneAiLocalAnalysisExplanationPidTimeDomain": {
+        "message": "PID 時域追蹤誤差反映機體對目標角速度的跟隨偏差。"
+    },
+    "autotuneAiLocalAnalysisExplanationMotorOutputImbalance": {
+        "message": "馬達平均輸出長期分散，通常表示動力系統平衡或機體機械對稱性有問題。"
+    },
+    "autotuneAiLocalAnalysisExplanationRatesMismatch": {
+        "message": "目前 Rates 設定對所選機型與飛行風格而言偏激進。"
+    },
+    "autotuneAiLocalAnalysisExplanationFilterFrequencyDomain": {
+        "message": "頻域能量分布顯示存在共振峰，或 D 項高頻能量偏高。"
+    },
+    "autotuneAiLocalAnalysisExplanationCollectBetterLog": {
+        "message": "在做調參判斷前，請先收集一段更長、且包含時間、陀螺儀、設定值與馬達欄位的日誌。"
+    },
+    "autotuneAiLocalAnalysisExplanationInspectPowertrainBalance": {
+        "message": "在依賴 PID 調整前，請先檢查槳葉、馬達狀態、機架對稱性與重心是否正常。"
+    },
+    "autotuneAiSelectRecommendedLogs": { "message": "選擇推薦日誌" },
+    "autotuneAiBblRecommendationHint": { "message": "推薦時先看可用日誌，再看解碼更完整，最後看時長更長。" },
+    "autotuneAiShowOnlyUsableLogs": { "message": "只顯示可用日誌" },
     "autotuneAiUnsupportedEncoding": { "message": "存在暫不支援的編碼欄位" },
+    "autotuneAiLocalAnalysisWriteBlocked": {
+        "message": "本地 BBL 證據目前不可用，因此 AI 建議僅作說明展示，不能直接寫入飛控。"
+    },
     "autotuneAiAggregateQualityUsable": { "message": "可直接交給 AI 分析" },
     "autotuneAiAggregateQualityDegraded": { "message": "可用，但需謹慎參考" },
     "autotuneAiAggregateQualityUnusable": { "message": "暫不可用" },
     "autotuneAiAggregateQualityUnknown": { "message": "品質未知" },
     "autotuneAiAggregateReasonAllSelectedLogsUsable": { "message": "已選日誌彼此一致，適合做聯合分析。" },
+    "autotuneAiAggregateReasonIncludesUnusableLogs": {
+        "message": "部分已選日誌不可用，需先改選更乾淨的日誌段後才能進行 AI 分析。"
+    },
     "autotuneAiAggregateReasonIncludesDegradedLogs": { "message": "部分已選日誌品質較弱，聚合結果需要更謹慎地參考。" },
     "autotuneAiAggregateReasonNoUsableLogs": { "message": "已選日誌未產出可用的聯合分析結果。" },
     "autotuneAiAggregateReasonFallback": { "message": "已為目前所選日誌生成本地聚合分析。" },
+    "autotuneAiLogReasonInsufficientRequiredData": { "message": "缺少必需資料，或有效時長過短。" },
+    "autotuneAiLogReasonPartialDecodeIssues": { "message": "存在壞幀或暫不支援的解碼問題。" },
+    "autotuneAiLogReasonSufficientRequiredData": { "message": "已具備必需的本地分析證據。" },
+    "autotuneAiLogReasonMissingQuality": { "message": "暫無本地品質原因說明。" },
     "autotuneAiRequiredBadge": { "message": "必填" },
     "autotuneAiCraftFreestyle": { "message": "花飛" },
     "autotuneAiCraftRacing": { "message": "競速" },

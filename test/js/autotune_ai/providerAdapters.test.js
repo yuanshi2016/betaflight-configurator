@@ -70,6 +70,31 @@ describe("autotune AI provider adapters", () => {
         );
     });
 
+    it("defines the exact JSON contract and blocks unsupported response shapes", () => {
+        const request = buildProviderRequest(
+            {
+                provider: "deepseek-openai",
+                baseUrl: "https://api.deepseek.com",
+                model: "deepseek-v4-pro",
+                apiKey: "secret-key",
+            },
+            payload,
+            null,
+            { locale: "en" },
+        );
+        const body = JSON.parse(request.options.body);
+
+        expect(body.messages[0].content).toContain("Return exactly this JSON shape");
+        expect(body.messages[0].content).toContain('"writeable": boolean');
+        expect(body.messages[0].content).toContain('"confidence": "low" | "medium" | "high"');
+        expect(body.messages[0].content).toContain('"values": {');
+        expect(body.messages[0].content).toContain("Do not return error fields or diagnostics/recommendations arrays.");
+        expect(body.messages[0].content).toContain(
+            "Only set writeable=true when localAnalysis provides enough concrete evidence for a specific safe config change.",
+        );
+        expect(body.messages[1].content).toContain("Return exactly this JSON shape");
+    });
+
     it("keeps temperature when DeepSeek OpenAI-compatible thinking mode is disabled", () => {
         const request = buildProviderRequest(
             {
@@ -209,5 +234,31 @@ describe("autotune AI provider adapters", () => {
         const body = JSON.parse(request.options.body);
 
         expect(body.messages[0].content).toContain("Simplified Chinese");
+    });
+
+    it("instructs the model to avoid writeable recommendations when local bbl evidence is degraded", () => {
+        const degradedPayload = {
+            ...payload,
+            localAnalysis: {
+                aggregateQuality: {
+                    status: "degraded",
+                    reason: "includes_unusable_logs",
+                },
+            },
+        };
+
+        const request = buildProviderRequest(
+            {
+                provider: "deepseek-openai",
+                baseUrl: "https://api.deepseek.com",
+                model: "deepseek-v4-pro",
+                apiKey: "secret-key",
+            },
+            degradedPayload,
+        );
+        const body = JSON.parse(request.options.body);
+
+        expect(body.messages[0].content).toContain("If localAnalysis is missing or not usable, do not return writeable recommendations.");
+        expect(body.messages[0].content).toContain("Explain the evidence limitation and keep every group writeable=false.");
     });
 });

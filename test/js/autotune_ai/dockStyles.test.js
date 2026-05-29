@@ -70,14 +70,39 @@ describe("autotune AI dock styles", () => {
     it("shows separate input source slots and a BBL log manager", () => {
         const component = readFileSync("src/components/tabs/autotune/AiAdvisor.vue", "utf8");
         const store = readFileSync("src/stores/autotuneAi.js", "utf8");
+        const englishMessages = readFileSync("locales/en/messages.json", "utf8");
+        const chineseMessages = readFileSync("locales/zh_CN/messages.json", "utf8");
+        const traditionalChineseMessages = readFileSync("locales/zh_TW/messages.json", "utf8");
 
         expect(component).toContain("autotune-ai-source-list");
         expect(component).toContain("autotuneAiCliSourceTitle");
         expect(component).toContain("autotuneAiBblSourceTitle");
         expect(component).toContain("autotuneAiBblLogManager");
+        expect(component).toContain("autotuneAiSelectRecommendedLogs");
+        expect(component).toContain("autotuneAiBblRecommendationHint");
+        expect(component).toContain("autotune-ai-bbl-manager__hint");
+        expect(component).toContain("autotuneAiShowOnlyUsableLogs");
+        expect(component).toContain("formatLogQualityStatus");
+        expect(component).toContain("formatLogQualityReason");
+        expect(component).toContain("formatLogEvidenceSummary");
+        expect(component).toContain("qualityBadgeClass");
+        expect(component).toContain("log.qualityReason");
+        expect(component).toContain("log.decodedMainFrames");
+        expect(component).toContain("log.corruptFrames");
+        expect(component).toContain("log.durationUs");
+        expect(component).toContain("autotune-ai-bbl-manager__log-header");
+        expect(component).toContain("autotune-ai-bbl-manager__log-badge");
+        expect(component).toContain("autotune-ai-bbl-manager__log-evidence");
+        expect(component).toContain("filteredBblLogOptions");
+        expect(component).toContain("sortBblLogOptions");
         expect(component).toContain("@click=\"selectBblLog");
         expect(store).toContain("selectBblLog");
+        expect(store).toContain("selectRecommendedBblLogs");
+        expect(store).toContain("MAX_RECOMMENDED_BBL_LOGS");
         expect(store).toContain("bblFileData");
+        expect(englishMessages).toContain("autotuneAiBblRecommendationHint");
+        expect(chineseMessages).toContain("autotuneAiBblRecommendationHint");
+        expect(traditionalChineseMessages).toContain("autotuneAiBblRecommendationHint");
     });
 
     it("keeps the input upload action additive after one source is loaded", () => {
@@ -96,12 +121,102 @@ describe("autotune AI dock styles", () => {
         expect(component).toContain("message.content");
     });
 
+    it("localizes local-analysis diagnostics and aggregate recommendations at render time", () => {
+        const component = readFileSync("src/components/tabs/autotune/AiAdvisor.vue", "utf8");
+        const englishMessages = readFileSync("locales/en/messages.json", "utf8");
+        const chineseMessages = readFileSync("locales/zh_CN/messages.json", "utf8");
+        const traditionalChineseMessages = readFileSync("locales/zh_TW/messages.json", "utf8");
+
+        expect(component).toContain("LOCAL_ANALYSIS_DIAGNOSTIC_TYPE_KEYS");
+        expect(component).toContain("LOCAL_ANALYSIS_RECOMMENDATION_TYPE_KEYS");
+        expect(component).toContain("LOCAL_ANALYSIS_RECOMMENDATION_GROUP_KEYS");
+        expect(component).toContain("LOCAL_ANALYSIS_EXPLANATION_KEYS");
+        expect(component).toContain("localizeLocalAnalysisValue(diagnostic?.type, LOCAL_ANALYSIS_DIAGNOSTIC_TYPE_KEYS)");
+        expect(component).toContain("localizeLocalAnalysisValue(diagnostic?.explanation, LOCAL_ANALYSIS_EXPLANATION_KEYS)");
+        expect(component).toContain("localizeLocalAnalysisValue(recommendation?.group, LOCAL_ANALYSIS_RECOMMENDATION_GROUP_KEYS)");
+        expect(component).toContain("localizeLocalAnalysisValue(recommendation?.type, LOCAL_ANALYSIS_RECOMMENDATION_TYPE_KEYS)");
+        expect(component).toContain("pid_time_domain");
+        expect(component).toContain("motor_output_imbalance");
+        expect(component).toContain("inspect_powertrain_balance");
+        expect(component).toContain("autotuneAiLocalAnalysisSources");
+        expect(component).toContain("autotuneAiLocalAnalysisPriority");
+
+        expect(englishMessages).toContain("autotuneAiLocalAnalysisDiagnosticPidTimeDomain");
+        expect(englishMessages).toContain("autotuneAiLocalAnalysisDiagnosticMotorOutputImbalance");
+        expect(englishMessages).toContain("autotuneAiLocalAnalysisRecommendationInspectPowertrainBalance");
+        expect(englishMessages).toContain("autotuneAiLocalAnalysisExplanationPidTimeDomain");
+        expect(englishMessages).toContain("autotuneAiLocalAnalysisExplanationInspectPowertrainBalance");
+        expect(englishMessages).toContain("autotuneAiLocalAnalysisPriorityHigh");
+        expect(englishMessages).toContain("autotuneAiLocalAnalysisSources");
+
+        expect(chineseMessages).toContain("autotuneAiLocalAnalysisDiagnosticPidTimeDomain");
+        expect(chineseMessages).toContain("autotuneAiLocalAnalysisRecommendationInspectPowertrainBalance");
+        expect(chineseMessages).toContain("autotuneAiLocalAnalysisExplanationInspectPowertrainBalance");
+        expect(chineseMessages).toContain("autotuneAiLocalAnalysisPriorityHigh");
+        expect(chineseMessages).toContain("autotuneAiLocalAnalysisSources");
+
+        expect(traditionalChineseMessages).toContain("autotuneAiLocalAnalysisDiagnosticPidTimeDomain");
+        expect(traditionalChineseMessages).toContain("autotuneAiLocalAnalysisRecommendationInspectPowertrainBalance");
+        expect(traditionalChineseMessages).toContain("autotuneAiLocalAnalysisExplanationInspectPowertrainBalance");
+        expect(traditionalChineseMessages).toContain("autotuneAiLocalAnalysisPriorityHigh");
+        expect(traditionalChineseMessages).toContain("autotuneAiLocalAnalysisSources");
+    });
+
+    it("keeps local-analysis terminology aligned for English and Chinese Betaflight users", () => {
+        const englishMessages = JSON.parse(readFileSync("locales/en/messages.json", "utf8"));
+        const chineseMessages = JSON.parse(readFileSync("locales/zh_CN/messages.json", "utf8"));
+        const traditionalChineseMessages = JSON.parse(readFileSync("locales/zh_TW/messages.json", "utf8"));
+
+        expect(englishMessages.autotuneAiLocalAnalysisSources.message).toBe("Source logs");
+        expect(englishMessages.autotuneAiLocalAnalysisPriority.message).toBe("Recommendation priority");
+        expect(englishMessages.autotuneAiLocalAnalysisDiagnosticPidTimeDomain.message).toBe(
+            "PID time-domain tracking error",
+        );
+        expect(englishMessages.autotuneAiLocalAnalysisDiagnosticRatesMismatch.message).toBe("Rates profile mismatch");
+        expect(englishMessages.autotuneAiLocalAnalysisExplanationPidTimeDomain.message).toBe(
+            "Time-domain tracking error indicates how closely the craft follows the requested angular-rate response.",
+        );
+
+        expect(chineseMessages.autotuneAiLocalAnalysis.message).toBe("本地黑盒分析");
+        expect(chineseMessages.autotuneAiAggregateRecommendations.message).toBe("汇总建议");
+        expect(chineseMessages.autotuneAiLocalAnalysisSources.message).toBe("来源日志");
+        expect(chineseMessages.autotuneAiLocalAnalysisPriority.message).toBe("建议优先级");
+        expect(chineseMessages.autotuneAiLocalAnalysisDiagnosticPidTimeDomain.message).toBe("PID 时域跟踪误差");
+        expect(chineseMessages.autotuneAiLocalAnalysisDiagnosticRatesMismatch.message).toBe("Rates 配置不匹配");
+        expect(chineseMessages.autotuneAiLocalAnalysisRecommendationInspectPowertrainBalance.message).toBe(
+            "检查动力系统平衡",
+        );
+        expect(chineseMessages.autotuneAiLocalAnalysisExplanationFilterFrequencyDomain.message).toBe(
+            "频域能量分布提示存在共振峰，或 D 项高频能量偏高。",
+        );
+
+        expect(traditionalChineseMessages.autotuneAiLocalAnalysis.message).toBe("本地黑盒分析");
+        expect(traditionalChineseMessages.autotuneAiAggregateRecommendations.message).toBe("彙整建議");
+        expect(traditionalChineseMessages.autotuneAiLocalAnalysisSources.message).toBe("來源日誌");
+        expect(traditionalChineseMessages.autotuneAiLocalAnalysisPriority.message).toBe("建議優先級");
+        expect(traditionalChineseMessages.autotuneAiLocalAnalysisDiagnosticPidTimeDomain.message).toBe(
+            "PID 時域追蹤誤差",
+        );
+        expect(traditionalChineseMessages.autotuneAiLocalAnalysisDiagnosticRatesMismatch.message).toBe(
+            "Rates 設定不相符",
+        );
+        expect(traditionalChineseMessages.autotuneAiLocalAnalysisRecommendationInspectPowertrainBalance.message).toBe(
+            "檢查動力系統平衡",
+        );
+        expect(traditionalChineseMessages.autotuneAiLocalAnalysisExplanationFilterFrequencyDomain.message).toBe(
+            "頻域能量分布顯示存在共振峰，或 D 項高頻能量偏高。",
+        );
+    });
+
     it("keeps non-writeable recommendation groups visible but blocks FC writes", () => {
         const component = readFileSync("src/components/tabs/autotune/AiAdvisor.vue", "utf8");
 
         expect(component).toContain("group.data.writeable === true");
+        expect(component).toContain("autotuneAiLocalAnalysisWriteBlocked");
+        expect(component).toContain("aggregateQuality.status !== 'usable'");
         expect(component).toContain("formatAggregateQualityStatus");
         expect(component).toContain("formatAggregateQualityReason");
+        expect(component).toContain("autotuneAiAggregateReasonIncludesUnusableLogs");
         expect(component).toContain('autotuneAiLocalAnalysis');
         expect(component).toContain('autotuneAiDiagnostics');
         expect(component).toContain('autotuneAiSelectedLogs');
