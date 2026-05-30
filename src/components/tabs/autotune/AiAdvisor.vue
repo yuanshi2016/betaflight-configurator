@@ -431,6 +431,14 @@
                         <template v-for="item in group.candidates" :key="item.key">
                             <dt class="text-dimmed">{{ item.key }}</dt>
                             <dd class="font-mono">{{ item.value.suggestedValue }}</dd>
+                            <dt class="text-dimmed">{{ $t("autotuneAiCandidateReason") }}</dt>
+                            <dd>{{ formatWriteEnvelopeCandidateReason(item.value.reason) }}</dd>
+                            <dt v-if="item.value.evidenceRefs?.length" class="text-dimmed">
+                                {{ $t("autotuneAiCandidateEvidence") }}
+                            </dt>
+                            <dd v-if="item.value.evidenceRefs?.length" class="font-mono">
+                                {{ formatWriteEnvelopeEvidenceRefs(item.value.evidenceRefs) }}
+                            </dd>
                         </template>
                     </dl>
                     <div v-if="!group.candidates.length" class="text-xs text-dimmed mt-2">
@@ -496,6 +504,16 @@
                         <template v-for="item in group.values" :key="item.key">
                             <dt class="text-dimmed">{{ item.key }}</dt>
                             <dd class="font-mono">{{ item.value }}</dd>
+                            <template v-if="getEffectivePlanCandidate(group.key, item.key)">
+                                <dt class="text-dimmed">{{ $t("autotuneAiCandidateReason") }}</dt>
+                                <dd>{{ formatWriteEnvelopeCandidateReason(getEffectivePlanCandidate(group.key, item.key).reason) }}</dd>
+                                <dt v-if="getEffectivePlanCandidate(group.key, item.key).evidenceRefs?.length" class="text-dimmed">
+                                    {{ $t("autotuneAiCandidateEvidence") }}
+                                </dt>
+                                <dd v-if="getEffectivePlanCandidate(group.key, item.key).evidenceRefs?.length" class="font-mono">
+                                    {{ formatWriteEnvelopeEvidenceRefs(getEffectivePlanCandidate(group.key, item.key).evidenceRefs) }}
+                                </dd>
+                            </template>
                         </template>
                     </dl>
                     <div v-if="!group.values.length" class="text-xs text-dimmed mt-2">
@@ -710,6 +728,14 @@ const LOCAL_ANALYSIS_EXPLANATION_KEYS = {
         "autotuneAiLocalAnalysisExplanationCollectBetterLog",
     "Check propellers, motor health, frame alignment, and CG before relying on PID changes.":
         "autotuneAiLocalAnalysisExplanationInspectPowertrainBalance",
+};
+const WRITE_ENVELOPE_CANDIDATE_REASON_KEYS = {
+    "Repeated frequency-domain gyro peaks suggest stronger gyro filtering.": "autotuneAiCandidateReasonGyroFilter",
+    "Repeated high-frequency D-term energy suggests stronger D-term filtering.": "autotuneAiCandidateReasonDtermFilter",
+    "Repeated roll/pitch under-tracking supports a small master multiplier increase.": "autotuneAiCandidateReasonPidMaster",
+    "Repeated moving-error under stick demand supports a small feedforward increase.": "autotuneAiCandidateReasonPidFeedforward",
+    "Repeated steady-state tracking error supports a small I gain increase.": "autotuneAiCandidateReasonPidI",
+    "Repeated peak-error evidence with no competing filter risk supports a small D gain increase.": "autotuneAiCandidateReasonPidD",
 };
 const LOCAL_ANALYSIS_PRIORITY_KEYS = {
     low: "autotuneAiLocalAnalysisPriorityLow",
@@ -1218,6 +1244,24 @@ function formatWriteEnvelopeBlockedReason(reason) {
             no_group_envelope: t("autotuneAiBlockedReasonNoGroupEnvelope"),
         }[reason] || reason || t("autotuneAiExplainOnly")
     );
+}
+
+function formatWriteEnvelopeCandidateReason(reason) {
+    const translationKey = WRITE_ENVELOPE_CANDIDATE_REASON_KEYS[reason];
+    if (!translationKey) {
+        return reason || "";
+    }
+
+    const translated = t(translationKey);
+    return translated === translationKey ? reason : translated;
+}
+
+function formatWriteEnvelopeEvidenceRefs(evidenceRefs = []) {
+    return (Array.isArray(evidenceRefs) ? evidenceRefs : []).join(" · ");
+}
+
+function getEffectivePlanCandidate(groupKey, candidateKey) {
+    return sessionState.localWriteEnvelope?.[groupKey]?.candidates?.[candidateKey] || null;
 }
 
 function formatLogEvidenceSummary(log) {

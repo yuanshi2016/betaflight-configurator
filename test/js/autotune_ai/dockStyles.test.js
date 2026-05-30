@@ -254,8 +254,15 @@ describe("autotune AI dock styles", () => {
         expect(component).toContain("autotuneAiAcceptedByLocalGuard");
         expect(component).toContain("autotuneAiRejectedByLocalGuard");
         expect(component).toContain("formatWriteEnvelopeBlockedReason");
+        expect(component).toContain("formatWriteEnvelopeCandidateReason");
+        expect(component).toContain("formatWriteEnvelopeEvidenceRefs");
+        expect(component).toContain("autotuneAiCandidateReason");
+        expect(component).toContain("autotuneAiCandidateEvidence");
         expect(component).toContain("autotuneAiBlockedReasonMechanicalImbalance");
         expect(component).toContain("autotuneAiBlockedReasonConflictingValues");
+        expect(component).toContain("autotuneAiCandidateReasonGyroFilter");
+        expect(component).toContain("autotuneAiCandidateReasonDtermFilter");
+        expect(component).toContain("getEffectivePlanCandidate");
         expect(component).toContain("sessionState.localWriteEnvelope");
         expect(component).toContain("sessionState.effectivePlan");
 
@@ -266,6 +273,10 @@ describe("autotune AI dock styles", () => {
         expect(englishMessages).toContain("autotuneAiRejectedByLocalGuard");
         expect(englishMessages).toContain("autotuneAiBlockedReasonMechanicalImbalance");
         expect(englishMessages).toContain("autotuneAiBlockedReasonConflictingValues");
+        expect(englishMessages).toContain("autotuneAiCandidateReason");
+        expect(englishMessages).toContain("autotuneAiCandidateEvidence");
+        expect(englishMessages).toContain("autotuneAiCandidateReasonGyroFilter");
+        expect(englishMessages).toContain("autotuneAiCandidateReasonDtermFilter");
         expect(englishMessages).toContain("autotuneAiExplainOnly");
 
         expect(chineseMessages).toContain("autotuneAiLocalWriteEnvelope");
@@ -275,6 +286,10 @@ describe("autotune AI dock styles", () => {
         expect(chineseMessages).toContain("autotuneAiRejectedByLocalGuard");
         expect(chineseMessages).toContain("autotuneAiBlockedReasonMechanicalImbalance");
         expect(chineseMessages).toContain("autotuneAiBlockedReasonConflictingValues");
+        expect(chineseMessages).toContain("autotuneAiCandidateReason");
+        expect(chineseMessages).toContain("autotuneAiCandidateEvidence");
+        expect(chineseMessages).toContain("autotuneAiCandidateReasonGyroFilter");
+        expect(chineseMessages).toContain("autotuneAiCandidateReasonDtermFilter");
         expect(chineseMessages).toContain("autotuneAiExplainOnly");
 
         expect(traditionalChineseMessages).toContain("autotuneAiLocalWriteEnvelope");
@@ -284,6 +299,10 @@ describe("autotune AI dock styles", () => {
         expect(traditionalChineseMessages).toContain("autotuneAiRejectedByLocalGuard");
         expect(traditionalChineseMessages).toContain("autotuneAiBlockedReasonMechanicalImbalance");
         expect(traditionalChineseMessages).toContain("autotuneAiBlockedReasonConflictingValues");
+        expect(traditionalChineseMessages).toContain("autotuneAiCandidateReason");
+        expect(traditionalChineseMessages).toContain("autotuneAiCandidateEvidence");
+        expect(traditionalChineseMessages).toContain("autotuneAiCandidateReasonGyroFilter");
+        expect(traditionalChineseMessages).toContain("autotuneAiCandidateReasonDtermFilter");
         expect(traditionalChineseMessages).toContain("autotuneAiExplainOnly");
     });
 
@@ -308,5 +327,19 @@ describe("autotune AI dock styles", () => {
         expect(writePath).not.toContain("sessionState.aiResponse?.groups?.[groupKey]");
         expect(effectivePlanSection).toContain('@click="writeGroup(group.key)"');
         expect(rawAiSection).not.toContain('@click="writeGroup(group.key)"');
+    });
+
+    it("renders candidate reason and evidence for guarded effective-plan values", () => {
+        const component = readFileSync("src/components/tabs/autotune/AiAdvisor.vue", "utf8");
+        const effectivePlanSection = component.slice(
+            component.indexOf('v-if="sessionState.effectivePlan"'),
+            component.indexOf('<section class="autotune-ai-section">', component.indexOf('v-if="sessionState.effectivePlan"') + 1),
+        );
+
+        expect(effectivePlanSection).toContain("getEffectivePlanCandidate");
+        expect(effectivePlanSection).toContain('$t("autotuneAiCandidateReason")');
+        expect(effectivePlanSection).toContain('$t("autotuneAiCandidateEvidence")');
+        expect(effectivePlanSection).toContain("formatWriteEnvelopeCandidateReason");
+        expect(effectivePlanSection).toContain("formatWriteEnvelopeEvidenceRefs");
     });
 });
