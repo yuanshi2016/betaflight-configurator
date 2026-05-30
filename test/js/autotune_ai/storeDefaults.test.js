@@ -142,6 +142,7 @@ describe("autotune AI store defaults", () => {
         expect(storeSource).toContain("bblFileData: null");
         expect(storeSource).toContain("conversationHistory: []");
         expect(storeSource).toContain("followUpInput: \"\"");
+        expect(storeSource).toContain('followUpScope: "all"');
         expect(storeSource).toContain("followUpState: \"idle\"");
         expect(storeSource).toContain("MAX_HISTORY_TOKENS = 6000");
         expect(storeSource).toContain("CRAFT_CONTEXT_PROFILES_KEY");
@@ -184,6 +185,7 @@ describe("autotune AI store defaults", () => {
         expect(defaultSessionState()).toMatchObject({
             localWriteEnvelope: null,
             effectivePlan: null,
+            followUpScope: "all",
         });
     });
 
@@ -627,6 +629,7 @@ describe("autotune AI store defaults", () => {
         ];
         store.sessionState.lastPayload = { sourceSummary: { hasBbl: false } };
         store.sessionState.followUpInput = "Need more detail";
+        store.sessionState.followUpScope = "all";
 
         await store.sendFollowUp();
 
@@ -647,6 +650,35 @@ describe("autotune AI store defaults", () => {
         expect(store.sessionState.conversationHistory[0].content).toBe(firstTurn);
         expect(store.sessionState.conversationHistory[1].content).toBe(assistantReply);
         expect(Array.isArray(providerHistory)).toBe(true);
+    });
+
+    it("sends a scoped follow-up prompt to the provider while keeping visible conversation text unchanged", async () => {
+        const store = useAutotuneAiStore();
+        mockExplainTuningAnalysis.mockResolvedValueOnce("plain follow-up");
+        mockParseAiResponse.mockImplementation(() => ({ summary: "parsed" }));
+
+        store.sessionState.lastPayload = {
+            sourceSummary: { hasBbl: true },
+            localAnalysis: { aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" } },
+        };
+        store.sessionState.conversationHistory = [
+            { role: "user", content: "Initial analysis payload." },
+            { role: "assistant", content: "{\"summary\":\"previous\"}" },
+        ];
+        store.sessionState.followUpInput = "Why is PID still blocked?";
+        store.sessionState.followUpScope = "pid";
+
+        await store.sendFollowUp();
+
+        expect(store.sessionState.conversationHistory.at(-2)).toEqual({
+            role: "user",
+            content: "Why is PID still blocked?",
+        });
+        const providerHistory = mockExplainTuningAnalysis.mock.calls[0][2];
+        expect(providerHistory.at(-1)).toEqual({
+            role: "user",
+            content: "Focus only on the PID group.\n\nWhy is PID still blocked?",
+        });
     });
 
     it("clears stale AI output when importing a new input file", async () => {

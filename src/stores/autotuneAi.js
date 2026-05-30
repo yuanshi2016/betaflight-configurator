@@ -232,6 +232,7 @@ export function defaultSessionState() {
         conversationHistory: [],
         conversationTrimmed: false,
         followUpInput: "",
+        followUpScope: "all",
         followUpState: "idle",
     };
 }
@@ -756,7 +757,17 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         sessionState.conversationHistory = [];
         sessionState.conversationTrimmed = false;
         sessionState.followUpInput = "";
+        sessionState.followUpScope = "all";
         sessionState.followUpState = "idle";
+    }
+
+    function buildScopedFollowUpMessage(scope, userMessage) {
+        const normalizedScope = ["pid", "filters", "rates"].includes(scope) ? scope : "all";
+        if (normalizedScope === "all") {
+            return userMessage;
+        }
+
+        return `Focus only on the ${normalizedScope.toUpperCase()} group.\n\n${userMessage}`;
     }
 
     function getLocalBblAnalysisErrorMessage() {
@@ -851,12 +862,19 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
 
         const previousHistory = [...sessionState.conversationHistory];
         const previousTrimmed = sessionState.conversationTrimmed;
+        const followUpScope = sessionState.followUpScope;
 
         sessionState.conversationHistory.push({ role: "user", content: userMessage });
         sessionState.followUpInput = "";
         sessionState.followUpState = "loading";
         sessionState.lastError = "";
-        const providerHistory = trimHistory();
+        const providerHistory = trimHistory().map((message) => ({ ...message }));
+        if (providerHistory.length) {
+            providerHistory[providerHistory.length - 1] = {
+                ...providerHistory[providerHistory.length - 1],
+                content: buildScopedFollowUpMessage(followUpScope, userMessage),
+            };
+        }
 
         try {
             const payload = sessionState.lastPayload || null;

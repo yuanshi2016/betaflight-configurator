@@ -628,6 +628,13 @@
 
             <form class="autotune-ai-followup" @submit.prevent="sendFollowUp">
                 <div class="autotune-ai-followup__body">
+                    <USelect
+                        v-model="sessionState.followUpScope"
+                        :items="followUpScopeOptions"
+                        size="sm"
+                        :ui="selectPortalUi"
+                        :disabled="sessionState.followUpState === 'loading'"
+                    />
                     <UInput
                         v-model="sessionState.followUpInput"
                         size="sm"
@@ -775,6 +782,13 @@ const riskOptions = computed(() => [
 const thinkingEffortOptions = computed(() => [
     { label: t("autotuneAiThinkingEffortHigh"), value: "high" },
     { label: t("autotuneAiThinkingEffortMax"), value: "max" },
+]);
+
+const followUpScopeOptions = computed(() => [
+    { label: t("autotuneAiFollowUpScopeAll"), value: "all" },
+    { label: t("autotuneAiFollowUpScopePid"), value: "pid" },
+    { label: t("autotuneAiFollowUpScopeFilters"), value: "filters" },
+    { label: t("autotuneAiFollowUpScopeRates"), value: "rates" },
 ]);
 
 const supportsThinkingMode = computed(() => providerSettings.provider.startsWith("deepseek"));
