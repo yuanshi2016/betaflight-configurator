@@ -774,6 +774,56 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         return `Focus only on the ${normalizedScope.toUpperCase()} group.\n\n${userMessage}`;
     }
 
+    function buildBlockedFollowUpTemplate(groupKey, blockedReason) {
+        if (blockedReason === "mechanical_imbalance_detected" && groupKey === "pid") {
+            return {
+                scope: "pid",
+                text: "Why is PID still blocked by mechanical imbalance, and what should I inspect first?",
+            };
+        }
+
+        if (blockedReason === "aggregate_quality_not_usable") {
+            return {
+                scope: ["pid", "filters", "rates"].includes(groupKey) ? groupKey : "all",
+                text: "Why is the current log quality still too weak for writeable recommendations, and how should I capture better logs?",
+            };
+        }
+
+        if (blockedReason === "single_log_filter_evidence_requires_confirmation" && groupKey === "filters") {
+            return {
+                scope: "filters",
+                text: "Why do Filters still need more log confirmation, and what evidence is still missing?",
+            };
+        }
+
+        if (blockedReason === "single_log_pid_requires_multi_log_confirmation" && groupKey === "pid") {
+            return {
+                scope: "pid",
+                text: "Why does PID still need more log confirmation, and what evidence is still missing?",
+            };
+        }
+
+        if (blockedReason === "conflicting_candidate_values" && groupKey === "rates") {
+            return {
+                scope: "rates",
+                text: "Why do the selected logs disagree on Rates candidate values, and where does that difference come from?",
+            };
+        }
+
+        return null;
+    }
+
+    function applyBlockedFollowUpTemplate(groupKey, blockedReason) {
+        const template = buildBlockedFollowUpTemplate(groupKey, blockedReason);
+        if (!template) {
+            return null;
+        }
+
+        sessionState.followUpScope = template.scope;
+        sessionState.followUpInput = template.text;
+        return template;
+    }
+
     function getLocalBblAnalysisErrorMessage() {
         const reason = sessionState.localBblAnalysis?.aggregateQuality?.reason;
 
@@ -936,6 +986,8 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         refreshLocalBblAnalysis,
         resetResponse,
         clearConversation,
+        buildBlockedFollowUpTemplate,
+        applyBlockedFollowUpTemplate,
         analyze,
         sendFollowUp,
     };

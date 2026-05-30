@@ -427,6 +427,24 @@
                                 : formatWriteEnvelopeBlockedReason(group.data.blockedReason)
                         }}
                     </p>
+                    <div
+                        v-if="!group.data.writeableAllowed && buildBlockedFollowUpTemplate(group.key, group.data.blockedReason)"
+                        class="text-xs text-dimmed mt-2"
+                    >
+                        <div>{{ $t("autotuneAiSuggestedFollowUp") }}</div>
+                        <div class="mt-1">
+                            {{
+                                buildBlockedFollowUpTemplate(group.key, group.data.blockedReason)?.text
+                            }}
+                        </div>
+                        <UButton
+                            size="xs"
+                            variant="ghost"
+                            class="mt-2"
+                            :label="$t('autotuneAiUseFollowUpTemplate')"
+                            @click="applyBlockedFollowUpTemplate(group.key, group.data.blockedReason)"
+                        />
+                    </div>
                     <dl class="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-xs">
                         <template v-for="item in group.candidates" :key="item.key">
                             <dt class="text-dimmed">{{ item.key }}</dt>
@@ -1279,6 +1297,14 @@ function formatWriteEnvelopeEvidenceRefs(evidenceRefs = []) {
 
 function getEffectivePlanCandidate(groupKey, candidateKey) {
     return sessionState.localWriteEnvelope?.[groupKey]?.candidates?.[candidateKey] || null;
+}
+
+function buildBlockedFollowUpTemplate(groupKey, blockedReason) {
+    return store.buildBlockedFollowUpTemplate(groupKey, blockedReason);
+}
+
+function applyBlockedFollowUpTemplate(groupKey, blockedReason) {
+    return store.applyBlockedFollowUpTemplate(groupKey, blockedReason);
 }
 
 function formatLogEvidenceSummary(log) {

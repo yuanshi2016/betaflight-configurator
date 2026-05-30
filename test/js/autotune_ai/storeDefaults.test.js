@@ -144,6 +144,8 @@ describe("autotune AI store defaults", () => {
         expect(storeSource).toContain("followUpInput: \"\"");
         expect(storeSource).toContain('followUpScope: "all"');
         expect(storeSource).toContain("followUpState: \"idle\"");
+        expect(storeSource).toContain("function buildBlockedFollowUpTemplate");
+        expect(storeSource).toContain("function applyBlockedFollowUpTemplate");
         expect(storeSource).toContain("MAX_HISTORY_TOKENS = 6000");
         expect(storeSource).toContain("CRAFT_CONTEXT_PROFILES_KEY");
         expect(storeSource).toContain("craftContextProfiles");
@@ -704,6 +706,36 @@ describe("autotune AI store defaults", () => {
             role: "user",
             content: "Focus only on the ROLL axis.\n\nWhy is roll still blocked?",
         });
+    });
+
+    it("applies a blocked follow-up template for PID mechanical imbalance", () => {
+        const store = useAutotuneAiStore();
+
+        const template = store.applyBlockedFollowUpTemplate("pid", "mechanical_imbalance_detected");
+
+        expect(template).toEqual({
+            scope: "pid",
+            text: "Why is PID still blocked by mechanical imbalance, and what should I inspect first?",
+        });
+        expect(store.sessionState.followUpScope).toBe("pid");
+        expect(store.sessionState.followUpInput).toBe(
+            "Why is PID still blocked by mechanical imbalance, and what should I inspect first?",
+        );
+    });
+
+    it("applies a blocked follow-up template for aggregate quality gating", () => {
+        const store = useAutotuneAiStore();
+
+        const template = store.applyBlockedFollowUpTemplate("filters", "aggregate_quality_not_usable");
+
+        expect(template).toEqual({
+            scope: "filters",
+            text: "Why is the current log quality still too weak for writeable recommendations, and how should I capture better logs?",
+        });
+        expect(store.sessionState.followUpScope).toBe("filters");
+        expect(store.sessionState.followUpInput).toBe(
+            "Why is the current log quality still too weak for writeable recommendations, and how should I capture better logs?",
+        );
     });
 
     it("clears stale AI output when importing a new input file", async () => {
