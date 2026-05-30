@@ -232,6 +232,7 @@ export function defaultSessionState() {
         conversationHistory: [],
         conversationTrimmed: false,
         followUpInput: "",
+        followUpScope: "all",
         followUpState: "idle",
     };
 }
@@ -443,19 +444,44 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
     }
 
     function buildLocalAnalysisStaticConfig() {
+        const result = {};
+
         if (FC?.RC_TUNING && Object.keys(FC.RC_TUNING).length) {
-            return {
-                rates: { ...FC.RC_TUNING },
+            result.rates = { ...FC.RC_TUNING };
+        } else if (sessionState.parsedCliSummary?.rates && Object.keys(sessionState.parsedCliSummary.rates).length) {
+            result.rates = { ...sessionState.parsedCliSummary.rates };
+        }
+
+        if (FC?.TUNING_SLIDERS && Object.keys(FC.TUNING_SLIDERS).length) {
+            result.filters = {
+                slider_gyro_filter_multiplier: FC.TUNING_SLIDERS.slider_gyro_filter_multiplier,
+                slider_dterm_filter_multiplier: FC.TUNING_SLIDERS.slider_dterm_filter_multiplier,
+            };
+            result.pid = {
+                slider_pids_mode: FC.TUNING_SLIDERS.slider_pids_mode,
+                slider_master_multiplier: FC.TUNING_SLIDERS.slider_master_multiplier,
+                slider_i_gain: FC.TUNING_SLIDERS.slider_i_gain,
+                slider_d_gain: FC.TUNING_SLIDERS.slider_d_gain,
+                slider_feedforward_gain: FC.TUNING_SLIDERS.slider_feedforward_gain,
+            };
+        } else if (sessionState.parsedCliSummary?.filters && Object.keys(sessionState.parsedCliSummary.filters).length) {
+            result.filters = {
+                slider_gyro_filter_multiplier: sessionState.parsedCliSummary.filters.simplified_gyro_filter_multiplier,
+                slider_dterm_filter_multiplier: sessionState.parsedCliSummary.filters.simplified_dterm_filter_multiplier,
             };
         }
 
-        if (sessionState.parsedCliSummary?.rates && Object.keys(sessionState.parsedCliSummary.rates).length) {
-            return {
-                rates: { ...sessionState.parsedCliSummary.rates },
+        if (!result.pid && sessionState.parsedCliSummary?.pid && Object.keys(sessionState.parsedCliSummary.pid).length) {
+            result.pid = {
+                slider_pids_mode: sessionState.parsedCliSummary.pid.simplified_pids_mode,
+                slider_master_multiplier: sessionState.parsedCliSummary.pid.simplified_master_multiplier,
+                slider_i_gain: sessionState.parsedCliSummary.pid.simplified_i_gain,
+                slider_d_gain: sessionState.parsedCliSummary.pid.simplified_d_gain,
+                slider_feedforward_gain: sessionState.parsedCliSummary.pid.simplified_feedforward_gain,
             };
         }
 
-        return {};
+        return result;
     }
 
     function analyzeSelectedBblLog(index) {
@@ -731,7 +757,71 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         sessionState.conversationHistory = [];
         sessionState.conversationTrimmed = false;
         sessionState.followUpInput = "";
+        sessionState.followUpScope = "all";
         sessionState.followUpState = "idle";
+    }
+
+    function buildScopedFollowUpMessage(scope, userMessage) {
+        const normalizedScope = ["pid", "filters", "rates", "roll", "pitch", "yaw"].includes(scope) ? scope : "all";
+        if (normalizedScope === "all") {
+            return userMessage;
+        }
+
+        if (["roll", "pitch", "yaw"].includes(normalizedScope)) {
+            return `Focus only on the ${normalizedScope.toUpperCase()} axis.\n\n${userMessage}`;
+        }
+
+        return `Focus only on the ${normalizedScope.toUpperCase()} group.\n\n${userMessage}`;
+    }
+
+    function buildBlockedFollowUpTemplate(groupKey, blockedReason) {
+        if (blockedReason === "mechanical_imbalance_detected" && groupKey === "pid") {
+            return {
+                scope: "pid",
+                text: "Why is PID still blocked by mechanical imbalance, and what should I inspect first?",
+            };
+        }
+
+        if (blockedReason === "aggregate_quality_not_usable") {
+            return {
+                scope: ["pid", "filters", "rates"].includes(groupKey) ? groupKey : "all",
+                text: "Why is the current log quality still too weak for writeable recommendations, and how should I capture better logs?",
+            };
+        }
+
+        if (blockedReason === "single_log_filter_evidence_requires_confirmation" && groupKey === "filters") {
+            return {
+                scope: "filters",
+                text: "Why do Filters still need more log confirmation, and what evidence is still missing?",
+            };
+        }
+
+        if (blockedReason === "single_log_pid_requires_multi_log_confirmation" && groupKey === "pid") {
+            return {
+                scope: "pid",
+                text: "Why does PID still need more log confirmation, and what evidence is still missing?",
+            };
+        }
+
+        if (blockedReason === "conflicting_candidate_values" && groupKey === "rates") {
+            return {
+                scope: "rates",
+                text: "Why do the selected logs disagree on Rates candidate values, and where does that difference come from?",
+            };
+        }
+
+        return null;
+    }
+
+    function applyBlockedFollowUpTemplate(groupKey, blockedReason) {
+        const template = buildBlockedFollowUpTemplate(groupKey, blockedReason);
+        if (!template) {
+            return null;
+        }
+
+        sessionState.followUpScope = template.scope;
+        sessionState.followUpInput = template.text;
+        return template;
     }
 
     function getLocalBblAnalysisErrorMessage() {
@@ -826,12 +916,19 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
 
         const previousHistory = [...sessionState.conversationHistory];
         const previousTrimmed = sessionState.conversationTrimmed;
+        const followUpScope = sessionState.followUpScope;
 
         sessionState.conversationHistory.push({ role: "user", content: userMessage });
         sessionState.followUpInput = "";
         sessionState.followUpState = "loading";
         sessionState.lastError = "";
-        const providerHistory = trimHistory();
+        const providerHistory = trimHistory().map((message) => ({ ...message }));
+        if (providerHistory.length) {
+            providerHistory[providerHistory.length - 1] = {
+                ...providerHistory[providerHistory.length - 1],
+                content: buildScopedFollowUpMessage(followUpScope, userMessage),
+            };
+        }
 
         try {
             const payload = sessionState.lastPayload || null;
@@ -889,6 +986,8 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
         refreshLocalBblAnalysis,
         resetResponse,
         clearConversation,
+        buildBlockedFollowUpTemplate,
+        applyBlockedFollowUpTemplate,
         analyze,
         sendFollowUp,
     };

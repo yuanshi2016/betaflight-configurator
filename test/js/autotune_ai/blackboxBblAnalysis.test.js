@@ -31,6 +31,32 @@ function buildAxisSeries({ length, sampleRateHz, setpointValue, gyroValue, dterm
     };
 }
 
+function buildSteadyBiasAxisSeries({ length, sampleRateHz, steadyGyro, movingSetpoint, movingGyro, dtermValue = 0 }) {
+    const dtUs = Math.round(1_000_000 / sampleRateHz);
+    return {
+        timeUs: Array.from({ length }, (_, index) => index * dtUs),
+        setpoint: Array.from({ length }, (_, index) => {
+            if (index < length / 4) {
+                return 0;
+            }
+            if (index < length / 2) {
+                return movingSetpoint;
+            }
+            return 0;
+        }),
+        gyro: Array.from({ length }, (_, index) => {
+            if (index < length / 4) {
+                return steadyGyro;
+            }
+            if (index < length / 2) {
+                return movingGyro;
+            }
+            return steadyGyro;
+        }),
+        dterm: Array.from({ length }, (_, index) => Math.sin((2 * Math.PI * 120 * index) / sampleRateHz) * dtermValue),
+    };
+}
+
 describe("autotune AI ordinary BBL analysis", () => {
     it("classifies a log with strong motor imbalance as usable and reports a motor imbalance diagnostic", () => {
         const result = analyzeBblLog({
@@ -398,28 +424,51 @@ describe("autotune AI ordinary BBL analysis", () => {
         expect(unusableResult.recommendations.find((item) => item.type === "review_rates_profile")).toBeUndefined();
     });
 
-    it("keeps filter writes explain-only for a single usable log even when fft evidence exists", () => {
+    it("builds conservative filter candidates but keeps single-log filter writes explain-only", () => {
         const result = analyzeBblLog({
             summary: {
                 samples: { decodedMainFrames: 1400, corruptFrames: 0, unsupportedEncodedFrames: 0, durationUs: 8_000_000 },
                 fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true } },
                 analysisInput: {
                     axes: {
-                        roll: {
-                            timeUs: Array.from({ length: 128 }, (_, index) => index * 500),
-                            gyro: Array.from({ length: 128 }, (_, index) => Math.sin(index / 4) * 60),
-                            setpoint: Array.from({ length: 128 }, () => 0),
-                            dterm: Array.from({ length: 128 }, (_, index) => Math.sin(index / 3) * 20),
-                        },
+                        roll: buildAxisSeries({
+                            length: 256,
+                            sampleRateHz: 1000,
+                            setpointValue: 100,
+                            gyroValue: 55,
+                            dtermValue: 20,
+                            peakHz: 180,
+                            peakAmplitude: 35,
+                        }),
                     },
                 },
             },
             craftContext: { craftType: "freestyle", frameSize: "5寸" },
-            staticConfig: { rates: { rates_type: 0 } },
+            staticConfig: {
+                rates: { rates_type: 0 },
+                filters: {
+                    slider_gyro_filter_multiplier: 100,
+                    slider_dterm_filter_multiplier: 100,
+                },
+            },
         });
 
         expect(result.writeEnvelope.filters.writeableAllowed).toBe(false);
         expect(result.writeEnvelope.filters.blockedReason).toBe("single_log_filter_evidence_requires_confirmation");
+        expect(result.writeEnvelope.filters.candidates).toEqual({
+            slider_gyro_filter_multiplier: expect.objectContaining({
+                suggestedValue: 95,
+                min: 95,
+                max: 100,
+                step: 1,
+            }),
+            slider_dterm_filter_multiplier: expect.objectContaining({
+                suggestedValue: 92,
+                min: 92,
+                max: 100,
+                step: 1,
+            }),
+        });
     });
 
     it("blocks pid writes when high-confidence motor imbalance is present", () => {
@@ -451,6 +500,207 @@ describe("autotune AI ordinary BBL analysis", () => {
 
         expect(result.writeEnvelope.pid.writeableAllowed).toBe(false);
         expect(result.writeEnvelope.pid.blockedReason).toBe("mechanical_imbalance_detected");
+    });
+
+    it("builds conservative PID candidates but keeps single-log PID writes explain-only", () => {
+        const result = analyzeBblLog({
+            summary: {
+                samples: {
+                    decodedMainFrames: 256,
+                    corruptFrames: 0,
+                    unsupportedEncodedFrames: 0,
+                    durationUs: 255_000,
+                },
+                fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true, debug: true } },
+                fieldStats: {
+                    motor: {
+                        0: { mean: 1500, count: 256 },
+                        1: { mean: 1501, count: 256 },
+                        2: { mean: 1499, count: 256 },
+                        3: { mean: 1500, count: 256 },
+                    },
+                },
+                analysisInput: {
+                    sourceType: "bbl",
+                    craftClass: "5-6in",
+                    axes: {
+                        roll: buildAxisSeries({
+                            length: 256,
+                            sampleRateHz: 1000,
+                            setpointValue: 100,
+                            gyroValue: 55,
+                            dtermValue: 20,
+                            peakHz: 180,
+                            peakAmplitude: 35,
+                        }),
+                        pitch: buildAxisSeries({
+                            length: 256,
+                            sampleRateHz: 1000,
+                            setpointValue: 90,
+                            gyroValue: 50,
+                            dtermValue: 18,
+                            peakHz: 185,
+                            peakAmplitude: 32,
+                        }),
+                    },
+                },
+            },
+            craftContext: { craftType: "freestyle", frameSize: "5" },
+            staticConfig: {
+                pid: {
+                    slider_pids_mode: 1,
+                    slider_master_multiplier: 100,
+                    slider_i_gain: 100,
+                    slider_d_gain: 100,
+                    slider_feedforward_gain: 100,
+                },
+            },
+        });
+
+        expect(result.writeEnvelope.pid.writeableAllowed).toBe(false);
+        expect(result.writeEnvelope.pid.blockedReason).toBe("single_log_pid_requires_multi_log_confirmation");
+        expect(result.writeEnvelope.pid.candidates).toEqual({
+            slider_master_multiplier: expect.objectContaining({
+                suggestedValue: 102,
+                min: 100,
+                max: 102,
+                step: 1,
+            }),
+            slider_feedforward_gain: expect.objectContaining({
+                suggestedValue: 104,
+                min: 100,
+                max: 104,
+                step: 1,
+            }),
+        });
+        expect(result.writeEnvelope.pid.candidates.slider_i_gain).toBeUndefined();
+        expect(result.writeEnvelope.pid.candidates.slider_d_gain).toBeUndefined();
+    });
+
+    it("builds a conservative I-gain candidate when steady-state error is repeatedly high", () => {
+        const result = analyzeBblLog({
+            summary: {
+                samples: {
+                    decodedMainFrames: 256,
+                    corruptFrames: 0,
+                    unsupportedEncodedFrames: 0,
+                    durationUs: 255_000,
+                },
+                fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true, debug: true } },
+                fieldStats: {
+                    motor: {
+                        0: { mean: 1500, count: 256 },
+                        1: { mean: 1501, count: 256 },
+                        2: { mean: 1499, count: 256 },
+                        3: { mean: 1500, count: 256 },
+                    },
+                },
+                analysisInput: {
+                    sourceType: "bbl",
+                    craftClass: "5-6in",
+                    axes: {
+                        roll: buildSteadyBiasAxisSeries({
+                            length: 256,
+                            sampleRateHz: 1000,
+                            steadyGyro: -12,
+                            movingSetpoint: 70,
+                            movingGyro: 50,
+                        }),
+                        pitch: buildSteadyBiasAxisSeries({
+                            length: 256,
+                            sampleRateHz: 1000,
+                            steadyGyro: -11,
+                            movingSetpoint: 68,
+                            movingGyro: 49,
+                        }),
+                    },
+                },
+            },
+            craftContext: { craftType: "freestyle", frameSize: "5" },
+            staticConfig: {
+                pid: {
+                    slider_pids_mode: 1,
+                    slider_master_multiplier: 100,
+                    slider_i_gain: 100,
+                    slider_d_gain: 100,
+                    slider_feedforward_gain: 100,
+                },
+            },
+        });
+
+        expect(result.writeEnvelope.pid.writeableAllowed).toBe(false);
+        expect(result.writeEnvelope.pid.blockedReason).toBe("single_log_pid_requires_multi_log_confirmation");
+        expect(result.writeEnvelope.pid.candidates.slider_i_gain).toEqual(
+            expect.objectContaining({
+                suggestedValue: 102,
+                min: 100,
+                max: 102,
+                step: 1,
+            }),
+        );
+    });
+
+    it("builds a conservative D-gain candidate when peak-error evidence is high and no filter risk competes", () => {
+        const result = analyzeBblLog({
+            summary: {
+                samples: {
+                    decodedMainFrames: 256,
+                    corruptFrames: 0,
+                    unsupportedEncodedFrames: 0,
+                    durationUs: 255_000,
+                },
+                fields: { requiredColumns: { time: true, gyro: true, setpoint: true, motor: true, debug: true } },
+                fieldStats: {
+                    motor: {
+                        0: { mean: 1500, count: 256 },
+                        1: { mean: 1501, count: 256 },
+                        2: { mean: 1499, count: 256 },
+                        3: { mean: 1500, count: 256 },
+                    },
+                },
+                analysisInput: {
+                    sourceType: "bbl",
+                    craftClass: "5-6in",
+                    axes: {
+                        roll: buildSteadyBiasAxisSeries({
+                            length: 256,
+                            sampleRateHz: 1000,
+                            steadyGyro: 0,
+                            movingSetpoint: 100,
+                            movingGyro: 20,
+                        }),
+                        pitch: buildSteadyBiasAxisSeries({
+                            length: 256,
+                            sampleRateHz: 1000,
+                            steadyGyro: 0,
+                            movingSetpoint: 95,
+                            movingGyro: 18,
+                        }),
+                    },
+                },
+            },
+            craftContext: { craftType: "freestyle", frameSize: "5" },
+            staticConfig: {
+                pid: {
+                    slider_pids_mode: 1,
+                    slider_master_multiplier: 100,
+                    slider_i_gain: 100,
+                    slider_d_gain: 100,
+                    slider_feedforward_gain: 100,
+                },
+            },
+        });
+
+        expect(result.writeEnvelope.pid.writeableAllowed).toBe(false);
+        expect(result.writeEnvelope.pid.blockedReason).toBe("single_log_pid_requires_multi_log_confirmation");
+        expect(result.writeEnvelope.pid.candidates.slider_d_gain).toEqual(
+            expect.objectContaining({
+                suggestedValue: 103,
+                min: 100,
+                max: 103,
+                step: 1,
+            }),
+        );
     });
 
     it("keeps rates write envelopes explain-only when the log quality is degraded", () => {

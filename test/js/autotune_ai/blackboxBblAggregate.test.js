@@ -390,6 +390,226 @@ describe("autotune AI multi-log BBL aggregation", () => {
         );
     });
 
+    it("promotes filters to writeable when multiple usable logs agree on the same suggested values", () => {
+        const aggregate = aggregateBblAnalyses([
+            {
+                logIndex: 0,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    filters: {
+                        writeableAllowed: false,
+                        blockedReason: "single_log_filter_evidence_requires_confirmation",
+                        confidence: "medium",
+                        candidates: {
+                            slider_gyro_filter_multiplier: {
+                                suggestedValue: 95,
+                                min: 95,
+                                max: 100,
+                                step: 1,
+                                reason: "first",
+                                evidenceRefs: ["roll.frequencyDomain.gyroPeakMagnitude"],
+                            },
+                            slider_dterm_filter_multiplier: {
+                                suggestedValue: 92,
+                                min: 92,
+                                max: 100,
+                                step: 1,
+                                reason: "first",
+                                evidenceRefs: ["roll.frequencyDomain.dtermHighFreqAvg"],
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                logIndex: 1,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    filters: {
+                        writeableAllowed: false,
+                        blockedReason: "single_log_filter_evidence_requires_confirmation",
+                        confidence: "high",
+                        candidates: {
+                            slider_gyro_filter_multiplier: {
+                                suggestedValue: 95,
+                                min: 95,
+                                max: 100,
+                                step: 1,
+                                reason: "second",
+                                evidenceRefs: ["pitch.frequencyDomain.gyroPeakMagnitude"],
+                            },
+                            slider_dterm_filter_multiplier: {
+                                suggestedValue: 92,
+                                min: 92,
+                                max: 100,
+                                step: 1,
+                                reason: "second",
+                                evidenceRefs: ["pitch.frequencyDomain.dtermHighFreqAvg"],
+                            },
+                        },
+                    },
+                },
+            },
+        ]);
+
+        expect(aggregate.writeEnvelope.filters.writeableAllowed).toBe(true);
+        expect(aggregate.writeEnvelope.filters.confidence).toBe("high");
+        expect(aggregate.writeEnvelope.filters.candidates.slider_gyro_filter_multiplier).toEqual(
+            expect.objectContaining({
+                suggestedValue: 95,
+                min: 95,
+                max: 100,
+                step: 1,
+            }),
+        );
+        expect(aggregate.writeEnvelope.filters.candidates.slider_dterm_filter_multiplier).toEqual(
+            expect.objectContaining({
+                suggestedValue: 92,
+                min: 92,
+                max: 100,
+                step: 1,
+            }),
+        );
+    });
+
+    it("promotes PID to writeable when multiple usable logs agree on the same suggested values", () => {
+        const aggregate = aggregateBblAnalyses([
+            {
+                logIndex: 0,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    pid: {
+                        writeableAllowed: false,
+                        blockedReason: "single_log_pid_requires_multi_log_confirmation",
+                        confidence: "medium",
+                        candidates: {
+                            slider_master_multiplier: {
+                                suggestedValue: 102,
+                                min: 100,
+                                max: 102,
+                                step: 1,
+                                reason: "first",
+                                evidenceRefs: ["roll.timeDomain.meanErrMoving"],
+                            },
+                            slider_feedforward_gain: {
+                                suggestedValue: 104,
+                                min: 100,
+                                max: 104,
+                                step: 1,
+                                reason: "first",
+                                evidenceRefs: ["roll.pidAdvice.ff"],
+                            },
+                            slider_i_gain: {
+                                suggestedValue: 102,
+                                min: 100,
+                                max: 102,
+                                step: 1,
+                                reason: "first",
+                                evidenceRefs: ["roll.timeDomain.meanErrSteady"],
+                            },
+                            slider_d_gain: {
+                                suggestedValue: 103,
+                                min: 100,
+                                max: 103,
+                                step: 1,
+                                reason: "first",
+                                evidenceRefs: ["roll.pidAdvice.d"],
+                            },
+                        },
+                    },
+                },
+            },
+            {
+                logIndex: 1,
+                quality: { status: "usable" },
+                diagnostics: [],
+                recommendations: [],
+                writeEnvelope: {
+                    pid: {
+                        writeableAllowed: false,
+                        blockedReason: "single_log_pid_requires_multi_log_confirmation",
+                        confidence: "high",
+                        candidates: {
+                            slider_master_multiplier: {
+                                suggestedValue: 102,
+                                min: 100,
+                                max: 102,
+                                step: 1,
+                                reason: "second",
+                                evidenceRefs: ["pitch.timeDomain.meanErrMoving"],
+                            },
+                            slider_feedforward_gain: {
+                                suggestedValue: 104,
+                                min: 100,
+                                max: 104,
+                                step: 1,
+                                reason: "second",
+                                evidenceRefs: ["pitch.pidAdvice.ff"],
+                            },
+                            slider_i_gain: {
+                                suggestedValue: 102,
+                                min: 100,
+                                max: 102,
+                                step: 1,
+                                reason: "second",
+                                evidenceRefs: ["pitch.timeDomain.meanErrSteady"],
+                            },
+                            slider_d_gain: {
+                                suggestedValue: 103,
+                                min: 100,
+                                max: 103,
+                                step: 1,
+                                reason: "second",
+                                evidenceRefs: ["pitch.pidAdvice.d"],
+                            },
+                        },
+                    },
+                },
+            },
+        ]);
+
+        expect(aggregate.writeEnvelope.pid.writeableAllowed).toBe(true);
+        expect(aggregate.writeEnvelope.pid.confidence).toBe("high");
+        expect(aggregate.writeEnvelope.pid.candidates.slider_master_multiplier).toEqual(
+            expect.objectContaining({
+                suggestedValue: 102,
+                min: 100,
+                max: 102,
+                step: 1,
+            }),
+        );
+        expect(aggregate.writeEnvelope.pid.candidates.slider_feedforward_gain).toEqual(
+            expect.objectContaining({
+                suggestedValue: 104,
+                min: 100,
+                max: 104,
+                step: 1,
+            }),
+        );
+        expect(aggregate.writeEnvelope.pid.candidates.slider_i_gain).toEqual(
+            expect.objectContaining({
+                suggestedValue: 102,
+                min: 100,
+                max: 102,
+                step: 1,
+            }),
+        );
+        expect(aggregate.writeEnvelope.pid.candidates.slider_d_gain).toEqual(
+            expect.objectContaining({
+                suggestedValue: 103,
+                min: 100,
+                max: 103,
+                step: 1,
+            }),
+        );
+    });
+
     it("downgrades filters to explain-only when usable logs disagree on suggested filter values", () => {
         const aggregate = aggregateBblAnalyses([
             {

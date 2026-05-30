@@ -17,6 +17,7 @@ const mockBuildAiPayload = vi.fn();
 const mockParseCliConfig = vi.fn();
 const mockFc = {
     RC_TUNING: null,
+    TUNING_SLIDERS: null,
 };
 
 vi.mock("../../../src/js/autotune-ai/blackboxBblSummary", () => ({
@@ -122,6 +123,7 @@ describe("autotune AI store defaults", () => {
         mockDetectAutotuneInputSource.mockReturnValue("cli");
         mockBuildAiPayload.mockReturnValue({});
         mockFc.RC_TUNING = null;
+        mockFc.TUNING_SLIDERS = null;
         mockParseCliConfig.mockReturnValue(null);
     });
 
@@ -140,7 +142,10 @@ describe("autotune AI store defaults", () => {
         expect(storeSource).toContain("bblFileData: null");
         expect(storeSource).toContain("conversationHistory: []");
         expect(storeSource).toContain("followUpInput: \"\"");
+        expect(storeSource).toContain('followUpScope: "all"');
         expect(storeSource).toContain("followUpState: \"idle\"");
+        expect(storeSource).toContain("function buildBlockedFollowUpTemplate");
+        expect(storeSource).toContain("function applyBlockedFollowUpTemplate");
         expect(storeSource).toContain("MAX_HISTORY_TOKENS = 6000");
         expect(storeSource).toContain("CRAFT_CONTEXT_PROFILES_KEY");
         expect(storeSource).toContain("craftContextProfiles");
@@ -182,6 +187,7 @@ describe("autotune AI store defaults", () => {
         expect(defaultSessionState()).toMatchObject({
             localWriteEnvelope: null,
             effectivePlan: null,
+            followUpScope: "all",
         });
     });
 
@@ -497,9 +503,31 @@ describe("autotune AI store defaults", () => {
             roll_rate: 900,
             pitch_rate: 800,
         };
+        mockFc.TUNING_SLIDERS = {
+            slider_gyro_filter_multiplier: 97,
+            slider_dterm_filter_multiplier: 94,
+            slider_pids_mode: 1,
+            slider_master_multiplier: 102,
+            slider_i_gain: 110,
+            slider_d_gain: 108,
+            slider_feedforward_gain: 106,
+        };
 
         const store = useAutotuneAiStore();
-        store.sessionState.parsedCliSummary = { rates: { roll_rate: 700 } };
+        store.sessionState.parsedCliSummary = {
+            rates: { roll_rate: 700 },
+            pid: {
+                simplified_pids_mode: 0,
+                simplified_master_multiplier: 90,
+                simplified_i_gain: 88,
+                simplified_d_gain: 86,
+                simplified_feedforward_gain: 84,
+            },
+            filters: {
+                simplified_gyro_filter_multiplier: 90,
+                simplified_dterm_filter_multiplier: 88,
+            },
+        };
         mockDetectAutotuneInputSource.mockReturnValue("bbl");
 
         await store.importInputFile(createBblFile());
@@ -509,6 +537,57 @@ describe("autotune AI store defaults", () => {
             rates: {
                 roll_rate: 900,
                 pitch_rate: 800,
+            },
+            filters: {
+                slider_gyro_filter_multiplier: 97,
+                slider_dterm_filter_multiplier: 94,
+            },
+            pid: {
+                slider_pids_mode: 1,
+                slider_master_multiplier: 102,
+                slider_i_gain: 110,
+                slider_d_gain: 108,
+                slider_feedforward_gain: 106,
+            },
+        });
+    });
+
+    it("falls back to parsed CLI filter and PID sliders when current FC sliders are unavailable", async () => {
+        const store = useAutotuneAiStore();
+        store.sessionState.parsedCliSummary = {
+            rates: { roll_rate: 700, pitch_rate: 680 },
+            pid: {
+                simplified_pids_mode: 0,
+                simplified_master_multiplier: 91,
+                simplified_i_gain: 89,
+                simplified_d_gain: 87,
+                simplified_feedforward_gain: 85,
+            },
+            filters: {
+                simplified_gyro_filter_multiplier: 93,
+                simplified_dterm_filter_multiplier: 91,
+            },
+        };
+        mockDetectAutotuneInputSource.mockReturnValue("bbl");
+
+        await store.importInputFile(createBblFile());
+
+        const [{ staticConfig }] = mockAnalyzeBblLog.mock.calls.at(-1);
+        expect(staticConfig).toEqual({
+            rates: {
+                roll_rate: 700,
+                pitch_rate: 680,
+            },
+            filters: {
+                slider_gyro_filter_multiplier: 93,
+                slider_dterm_filter_multiplier: 91,
+            },
+            pid: {
+                slider_pids_mode: 0,
+                slider_master_multiplier: 91,
+                slider_i_gain: 89,
+                slider_d_gain: 87,
+                slider_feedforward_gain: 85,
             },
         });
     });
@@ -552,6 +631,7 @@ describe("autotune AI store defaults", () => {
         ];
         store.sessionState.lastPayload = { sourceSummary: { hasBbl: false } };
         store.sessionState.followUpInput = "Need more detail";
+        store.sessionState.followUpScope = "all";
 
         await store.sendFollowUp();
 
@@ -572,6 +652,90 @@ describe("autotune AI store defaults", () => {
         expect(store.sessionState.conversationHistory[0].content).toBe(firstTurn);
         expect(store.sessionState.conversationHistory[1].content).toBe(assistantReply);
         expect(Array.isArray(providerHistory)).toBe(true);
+    });
+
+    it("sends a scoped follow-up prompt to the provider while keeping visible conversation text unchanged", async () => {
+        const store = useAutotuneAiStore();
+        mockExplainTuningAnalysis.mockResolvedValueOnce("plain follow-up");
+        mockParseAiResponse.mockImplementation(() => ({ summary: "parsed" }));
+
+        store.sessionState.lastPayload = {
+            sourceSummary: { hasBbl: true },
+            localAnalysis: { aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" } },
+        };
+        store.sessionState.conversationHistory = [
+            { role: "user", content: "Initial analysis payload." },
+            { role: "assistant", content: "{\"summary\":\"previous\"}" },
+        ];
+        store.sessionState.followUpInput = "Why is PID still blocked?";
+        store.sessionState.followUpScope = "pid";
+
+        await store.sendFollowUp();
+
+        expect(store.sessionState.conversationHistory.at(-2)).toEqual({
+            role: "user",
+            content: "Why is PID still blocked?",
+        });
+        const providerHistory = mockExplainTuningAnalysis.mock.calls[0][2];
+        expect(providerHistory.at(-1)).toEqual({
+            role: "user",
+            content: "Focus only on the PID group.\n\nWhy is PID still blocked?",
+        });
+    });
+
+    it("sends an axis-scoped follow-up prompt to the provider", async () => {
+        const store = useAutotuneAiStore();
+        mockExplainTuningAnalysis.mockResolvedValueOnce("plain follow-up");
+        mockParseAiResponse.mockImplementation(() => ({ summary: "parsed" }));
+
+        store.sessionState.lastPayload = {
+            sourceSummary: { hasBbl: true },
+            localAnalysis: { aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" } },
+        };
+        store.sessionState.conversationHistory = [
+            { role: "user", content: "Initial analysis payload." },
+            { role: "assistant", content: "{\"summary\":\"previous\"}" },
+        ];
+        store.sessionState.followUpInput = "Why is roll still blocked?";
+        store.sessionState.followUpScope = "roll";
+
+        await store.sendFollowUp();
+
+        const providerHistory = mockExplainTuningAnalysis.mock.calls[0][2];
+        expect(providerHistory.at(-1)).toEqual({
+            role: "user",
+            content: "Focus only on the ROLL axis.\n\nWhy is roll still blocked?",
+        });
+    });
+
+    it("applies a blocked follow-up template for PID mechanical imbalance", () => {
+        const store = useAutotuneAiStore();
+
+        const template = store.applyBlockedFollowUpTemplate("pid", "mechanical_imbalance_detected");
+
+        expect(template).toEqual({
+            scope: "pid",
+            text: "Why is PID still blocked by mechanical imbalance, and what should I inspect first?",
+        });
+        expect(store.sessionState.followUpScope).toBe("pid");
+        expect(store.sessionState.followUpInput).toBe(
+            "Why is PID still blocked by mechanical imbalance, and what should I inspect first?",
+        );
+    });
+
+    it("applies a blocked follow-up template for aggregate quality gating", () => {
+        const store = useAutotuneAiStore();
+
+        const template = store.applyBlockedFollowUpTemplate("filters", "aggregate_quality_not_usable");
+
+        expect(template).toEqual({
+            scope: "filters",
+            text: "Why is the current log quality still too weak for writeable recommendations, and how should I capture better logs?",
+        });
+        expect(store.sessionState.followUpScope).toBe("filters");
+        expect(store.sessionState.followUpInput).toBe(
+            "Why is the current log quality still too weak for writeable recommendations, and how should I capture better logs?",
+        );
     });
 
     it("clears stale AI output when importing a new input file", async () => {

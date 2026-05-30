@@ -253,6 +253,19 @@ describe("autotune AI dock styles", () => {
         expect(component).toContain("autotuneAiLocalCandidates");
         expect(component).toContain("autotuneAiAcceptedByLocalGuard");
         expect(component).toContain("autotuneAiRejectedByLocalGuard");
+        expect(component).toContain("formatWriteEnvelopeBlockedReason");
+        expect(component).toContain("formatWriteEnvelopeCandidateReason");
+        expect(component).toContain("formatWriteEnvelopeEvidenceRefs");
+        expect(component).toContain("autotuneAiCandidateReason");
+        expect(component).toContain("autotuneAiCandidateEvidence");
+        expect(component).toContain("autotuneAiBlockedReasonMechanicalImbalance");
+        expect(component).toContain("autotuneAiBlockedReasonConflictingValues");
+        expect(component).toContain("autotuneAiCandidateReasonGyroFilter");
+        expect(component).toContain("autotuneAiCandidateReasonDtermFilter");
+        expect(component).toContain("getEffectivePlanCandidate");
+        expect(component).toContain("autotuneAiSuggestedFollowUp");
+        expect(component).toContain("autotuneAiUseFollowUpTemplate");
+        expect(component).toContain("applyBlockedFollowUpTemplate(group.key, group.data.blockedReason)");
         expect(component).toContain("sessionState.localWriteEnvelope");
         expect(component).toContain("sessionState.effectivePlan");
 
@@ -261,6 +274,16 @@ describe("autotune AI dock styles", () => {
         expect(englishMessages).toContain("autotuneAiLocalCandidates");
         expect(englishMessages).toContain("autotuneAiAcceptedByLocalGuard");
         expect(englishMessages).toContain("autotuneAiRejectedByLocalGuard");
+        expect(englishMessages).toContain("autotuneAiBlockedReasonMechanicalImbalance");
+        expect(englishMessages).toContain("autotuneAiBlockedReasonConflictingValues");
+        expect(englishMessages).toContain("autotuneAiCandidateReason");
+        expect(englishMessages).toContain("autotuneAiCandidateEvidence");
+        expect(englishMessages).toContain("autotuneAiCandidateReasonGyroFilter");
+        expect(englishMessages).toContain("autotuneAiCandidateReasonDtermFilter");
+        expect(englishMessages).toContain("autotuneAiSuggestedFollowUp");
+        expect(englishMessages).toContain("autotuneAiUseFollowUpTemplate");
+        expect(englishMessages).toContain("autotuneAiBlockedFollowUpMechanicalImbalancePid");
+        expect(englishMessages).toContain("autotuneAiBlockedFollowUpAggregateQuality");
         expect(englishMessages).toContain("autotuneAiExplainOnly");
 
         expect(chineseMessages).toContain("autotuneAiLocalWriteEnvelope");
@@ -268,6 +291,16 @@ describe("autotune AI dock styles", () => {
         expect(chineseMessages).toContain("autotuneAiLocalCandidates");
         expect(chineseMessages).toContain("autotuneAiAcceptedByLocalGuard");
         expect(chineseMessages).toContain("autotuneAiRejectedByLocalGuard");
+        expect(chineseMessages).toContain("autotuneAiBlockedReasonMechanicalImbalance");
+        expect(chineseMessages).toContain("autotuneAiBlockedReasonConflictingValues");
+        expect(chineseMessages).toContain("autotuneAiCandidateReason");
+        expect(chineseMessages).toContain("autotuneAiCandidateEvidence");
+        expect(chineseMessages).toContain("autotuneAiCandidateReasonGyroFilter");
+        expect(chineseMessages).toContain("autotuneAiCandidateReasonDtermFilter");
+        expect(chineseMessages).toContain("autotuneAiSuggestedFollowUp");
+        expect(chineseMessages).toContain("autotuneAiUseFollowUpTemplate");
+        expect(chineseMessages).toContain("autotuneAiBlockedFollowUpMechanicalImbalancePid");
+        expect(chineseMessages).toContain("autotuneAiBlockedFollowUpAggregateQuality");
         expect(chineseMessages).toContain("autotuneAiExplainOnly");
 
         expect(traditionalChineseMessages).toContain("autotuneAiLocalWriteEnvelope");
@@ -275,6 +308,16 @@ describe("autotune AI dock styles", () => {
         expect(traditionalChineseMessages).toContain("autotuneAiLocalCandidates");
         expect(traditionalChineseMessages).toContain("autotuneAiAcceptedByLocalGuard");
         expect(traditionalChineseMessages).toContain("autotuneAiRejectedByLocalGuard");
+        expect(traditionalChineseMessages).toContain("autotuneAiBlockedReasonMechanicalImbalance");
+        expect(traditionalChineseMessages).toContain("autotuneAiBlockedReasonConflictingValues");
+        expect(traditionalChineseMessages).toContain("autotuneAiCandidateReason");
+        expect(traditionalChineseMessages).toContain("autotuneAiCandidateEvidence");
+        expect(traditionalChineseMessages).toContain("autotuneAiCandidateReasonGyroFilter");
+        expect(traditionalChineseMessages).toContain("autotuneAiCandidateReasonDtermFilter");
+        expect(traditionalChineseMessages).toContain("autotuneAiSuggestedFollowUp");
+        expect(traditionalChineseMessages).toContain("autotuneAiUseFollowUpTemplate");
+        expect(traditionalChineseMessages).toContain("autotuneAiBlockedFollowUpMechanicalImbalancePid");
+        expect(traditionalChineseMessages).toContain("autotuneAiBlockedFollowUpAggregateQuality");
         expect(traditionalChineseMessages).toContain("autotuneAiExplainOnly");
     });
 
@@ -299,5 +342,64 @@ describe("autotune AI dock styles", () => {
         expect(writePath).not.toContain("sessionState.aiResponse?.groups?.[groupKey]");
         expect(effectivePlanSection).toContain('@click="writeGroup(group.key)"');
         expect(rawAiSection).not.toContain('@click="writeGroup(group.key)"');
+    });
+
+    it("renders candidate reason and evidence for guarded effective-plan values", () => {
+        const component = readFileSync("src/components/tabs/autotune/AiAdvisor.vue", "utf8");
+        const effectivePlanSection = component.slice(
+            component.indexOf('v-if="sessionState.effectivePlan"'),
+            component.indexOf('<section class="autotune-ai-section">', component.indexOf('v-if="sessionState.effectivePlan"') + 1),
+        );
+
+        expect(effectivePlanSection).toContain("getEffectivePlanCandidate");
+        expect(effectivePlanSection).toContain('$t("autotuneAiCandidateReason")');
+        expect(effectivePlanSection).toContain('$t("autotuneAiCandidateEvidence")');
+        expect(effectivePlanSection).toContain("formatWriteEnvelopeCandidateReason");
+        expect(effectivePlanSection).toContain("formatWriteEnvelopeEvidenceRefs");
+    });
+
+    it("adds a follow-up scope selector for group-focused questions", () => {
+        const component = readFileSync("src/components/tabs/autotune/AiAdvisor.vue", "utf8");
+        const englishMessages = readFileSync("locales/en/messages.json", "utf8");
+        const chineseMessages = readFileSync("locales/zh_CN/messages.json", "utf8");
+        const traditionalChineseMessages = readFileSync("locales/zh_TW/messages.json", "utf8");
+
+        expect(component).toContain("followUpScopeOptions");
+        expect(component).toContain('v-model="sessionState.followUpScope"');
+        expect(component).toContain("autotuneAiFollowUpScope");
+        expect(component).toContain("autotuneAiFollowUpScopeAll");
+        expect(component).toContain("autotuneAiFollowUpScopePid");
+        expect(component).toContain("autotuneAiFollowUpScopeFilters");
+        expect(component).toContain("autotuneAiFollowUpScopeRates");
+        expect(component).toContain("autotuneAiFollowUpScopeRoll");
+        expect(component).toContain("autotuneAiFollowUpScopePitch");
+        expect(component).toContain("autotuneAiFollowUpScopeYaw");
+
+        expect(englishMessages).toContain("autotuneAiFollowUpScope");
+        expect(englishMessages).toContain("autotuneAiFollowUpScopeAll");
+        expect(englishMessages).toContain("autotuneAiFollowUpScopePid");
+        expect(englishMessages).toContain("autotuneAiFollowUpScopeFilters");
+        expect(englishMessages).toContain("autotuneAiFollowUpScopeRates");
+        expect(englishMessages).toContain("autotuneAiFollowUpScopeRoll");
+        expect(englishMessages).toContain("autotuneAiFollowUpScopePitch");
+        expect(englishMessages).toContain("autotuneAiFollowUpScopeYaw");
+
+        expect(chineseMessages).toContain("autotuneAiFollowUpScope");
+        expect(chineseMessages).toContain("autotuneAiFollowUpScopeAll");
+        expect(chineseMessages).toContain("autotuneAiFollowUpScopePid");
+        expect(chineseMessages).toContain("autotuneAiFollowUpScopeFilters");
+        expect(chineseMessages).toContain("autotuneAiFollowUpScopeRates");
+        expect(chineseMessages).toContain("autotuneAiFollowUpScopeRoll");
+        expect(chineseMessages).toContain("autotuneAiFollowUpScopePitch");
+        expect(chineseMessages).toContain("autotuneAiFollowUpScopeYaw");
+
+        expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScope");
+        expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopeAll");
+        expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopePid");
+        expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopeFilters");
+        expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopeRates");
+        expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopeRoll");
+        expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopePitch");
+        expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopeYaw");
     });
 });

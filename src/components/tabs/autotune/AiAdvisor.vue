@@ -424,13 +424,39 @@
                         {{
                             group.data.writeableAllowed
                                 ? $t("autotuneAiLocalCandidates")
-                                : $t("autotuneAiExplainOnly")
+                                : formatWriteEnvelopeBlockedReason(group.data.blockedReason)
                         }}
                     </p>
+                    <div
+                        v-if="!group.data.writeableAllowed && buildBlockedFollowUpTemplate(group.key, group.data.blockedReason)"
+                        class="text-xs text-dimmed mt-2"
+                    >
+                        <div>{{ $t("autotuneAiSuggestedFollowUp") }}</div>
+                        <div class="mt-1">
+                            {{
+                                buildBlockedFollowUpTemplate(group.key, group.data.blockedReason)?.text
+                            }}
+                        </div>
+                        <UButton
+                            size="xs"
+                            variant="ghost"
+                            class="mt-2"
+                            :label="$t('autotuneAiUseFollowUpTemplate')"
+                            @click="applyBlockedFollowUpTemplate(group.key, group.data.blockedReason)"
+                        />
+                    </div>
                     <dl class="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-xs">
                         <template v-for="item in group.candidates" :key="item.key">
                             <dt class="text-dimmed">{{ item.key }}</dt>
                             <dd class="font-mono">{{ item.value.suggestedValue }}</dd>
+                            <dt class="text-dimmed">{{ $t("autotuneAiCandidateReason") }}</dt>
+                            <dd>{{ formatWriteEnvelopeCandidateReason(item.value.reason) }}</dd>
+                            <dt v-if="item.value.evidenceRefs?.length" class="text-dimmed">
+                                {{ $t("autotuneAiCandidateEvidence") }}
+                            </dt>
+                            <dd v-if="item.value.evidenceRefs?.length" class="font-mono">
+                                {{ formatWriteEnvelopeEvidenceRefs(item.value.evidenceRefs) }}
+                            </dd>
                         </template>
                     </dl>
                     <div v-if="!group.candidates.length" class="text-xs text-dimmed mt-2">
@@ -496,6 +522,16 @@
                         <template v-for="item in group.values" :key="item.key">
                             <dt class="text-dimmed">{{ item.key }}</dt>
                             <dd class="font-mono">{{ item.value }}</dd>
+                            <template v-if="getEffectivePlanCandidate(group.key, item.key)">
+                                <dt class="text-dimmed">{{ $t("autotuneAiCandidateReason") }}</dt>
+                                <dd>{{ formatWriteEnvelopeCandidateReason(getEffectivePlanCandidate(group.key, item.key).reason) }}</dd>
+                                <dt v-if="getEffectivePlanCandidate(group.key, item.key).evidenceRefs?.length" class="text-dimmed">
+                                    {{ $t("autotuneAiCandidateEvidence") }}
+                                </dt>
+                                <dd v-if="getEffectivePlanCandidate(group.key, item.key).evidenceRefs?.length" class="font-mono">
+                                    {{ formatWriteEnvelopeEvidenceRefs(getEffectivePlanCandidate(group.key, item.key).evidenceRefs) }}
+                                </dd>
+                            </template>
                         </template>
                     </dl>
                     <div v-if="!group.values.length" class="text-xs text-dimmed mt-2">
@@ -610,6 +646,13 @@
 
             <form class="autotune-ai-followup" @submit.prevent="sendFollowUp">
                 <div class="autotune-ai-followup__body">
+                    <USelect
+                        v-model="sessionState.followUpScope"
+                        :items="followUpScopeOptions"
+                        size="sm"
+                        :ui="selectPortalUi"
+                        :disabled="sessionState.followUpState === 'loading'"
+                    />
                     <UInput
                         v-model="sessionState.followUpInput"
                         size="sm"
@@ -711,6 +754,14 @@ const LOCAL_ANALYSIS_EXPLANATION_KEYS = {
     "Check propellers, motor health, frame alignment, and CG before relying on PID changes.":
         "autotuneAiLocalAnalysisExplanationInspectPowertrainBalance",
 };
+const WRITE_ENVELOPE_CANDIDATE_REASON_KEYS = {
+    "Repeated frequency-domain gyro peaks suggest stronger gyro filtering.": "autotuneAiCandidateReasonGyroFilter",
+    "Repeated high-frequency D-term energy suggests stronger D-term filtering.": "autotuneAiCandidateReasonDtermFilter",
+    "Repeated roll/pitch under-tracking supports a small master multiplier increase.": "autotuneAiCandidateReasonPidMaster",
+    "Repeated moving-error under stick demand supports a small feedforward increase.": "autotuneAiCandidateReasonPidFeedforward",
+    "Repeated steady-state tracking error supports a small I gain increase.": "autotuneAiCandidateReasonPidI",
+    "Repeated peak-error evidence with no competing filter risk supports a small D gain increase.": "autotuneAiCandidateReasonPidD",
+};
 const LOCAL_ANALYSIS_PRIORITY_KEYS = {
     low: "autotuneAiLocalAnalysisPriorityLow",
     medium: "autotuneAiLocalAnalysisPriorityMedium",
@@ -749,6 +800,16 @@ const riskOptions = computed(() => [
 const thinkingEffortOptions = computed(() => [
     { label: t("autotuneAiThinkingEffortHigh"), value: "high" },
     { label: t("autotuneAiThinkingEffortMax"), value: "max" },
+]);
+
+const followUpScopeOptions = computed(() => [
+    { label: t("autotuneAiFollowUpScopeAll"), value: "all" },
+    { label: t("autotuneAiFollowUpScopePid"), value: "pid" },
+    { label: t("autotuneAiFollowUpScopeFilters"), value: "filters" },
+    { label: t("autotuneAiFollowUpScopeRates"), value: "rates" },
+    { label: t("autotuneAiFollowUpScopeRoll"), value: "roll" },
+    { label: t("autotuneAiFollowUpScopePitch"), value: "pitch" },
+    { label: t("autotuneAiFollowUpScopeYaw"), value: "yaw" },
 ]);
 
 const supportsThinkingMode = computed(() => providerSettings.provider.startsWith("deepseek"));
@@ -1201,6 +1262,49 @@ function formatLogQualityReason(reason) {
         sufficient_required_data: t("autotuneAiLogReasonSufficientRequiredData"),
         missing_quality: t("autotuneAiLogReasonMissingQuality"),
     }[reason] || t("autotuneAiAggregateReasonFallback");
+}
+
+function formatWriteEnvelopeBlockedReason(reason) {
+    return (
+        {
+            insufficient_filter_evidence: t("autotuneAiBlockedReasonInsufficientFilterEvidence"),
+            insufficient_pid_evidence: t("autotuneAiBlockedReasonInsufficientPidEvidence"),
+            insufficient_rates_evidence: t("autotuneAiBlockedReasonInsufficientRatesEvidence"),
+            no_rates_mismatch_detected: t("autotuneAiBlockedReasonNoRatesMismatch"),
+            single_log_filter_evidence_requires_confirmation: t("autotuneAiBlockedReasonSingleLogFilterConfirmation"),
+            single_log_pid_requires_multi_log_confirmation: t("autotuneAiBlockedReasonSingleLogPidConfirmation"),
+            mechanical_imbalance_detected: t("autotuneAiBlockedReasonMechanicalImbalance"),
+            conflicting_candidate_values: t("autotuneAiBlockedReasonConflictingValues"),
+            aggregate_quality_not_usable: t("autotuneAiBlockedReasonAggregateQuality"),
+            no_group_envelope: t("autotuneAiBlockedReasonNoGroupEnvelope"),
+        }[reason] || reason || t("autotuneAiExplainOnly")
+    );
+}
+
+function formatWriteEnvelopeCandidateReason(reason) {
+    const translationKey = WRITE_ENVELOPE_CANDIDATE_REASON_KEYS[reason];
+    if (!translationKey) {
+        return reason || "";
+    }
+
+    const translated = t(translationKey);
+    return translated === translationKey ? reason : translated;
+}
+
+function formatWriteEnvelopeEvidenceRefs(evidenceRefs = []) {
+    return (Array.isArray(evidenceRefs) ? evidenceRefs : []).join(" · ");
+}
+
+function getEffectivePlanCandidate(groupKey, candidateKey) {
+    return sessionState.localWriteEnvelope?.[groupKey]?.candidates?.[candidateKey] || null;
+}
+
+function buildBlockedFollowUpTemplate(groupKey, blockedReason) {
+    return store.buildBlockedFollowUpTemplate(groupKey, blockedReason);
+}
+
+function applyBlockedFollowUpTemplate(groupKey, blockedReason) {
+    return store.applyBlockedFollowUpTemplate(groupKey, blockedReason);
 }
 
 function formatLogEvidenceSummary(log) {

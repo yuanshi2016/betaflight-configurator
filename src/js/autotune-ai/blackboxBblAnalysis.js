@@ -20,6 +20,7 @@ const MIN_MOVING_SETPOINT = 20;
 const MAX_STEADY_SETPOINT = 5;
 const MIN_VALID_DT_US = 10;
 const MAX_RATES_SINGLE_DELTA = 10;
+const FILTER_AXIS_NAMES = ["roll", "pitch"];
 
 const THRESHOLDS_BY_CRAFT_CLASS = {
     "1-4in": {
@@ -605,7 +606,92 @@ function hasHighConfidenceMotorImbalance(diagnostics = []) {
     return diagnostics.some((diagnostic) => diagnostic.type === "motor_output_imbalance" && diagnostic.confidence === "high");
 }
 
-function buildFiltersWriteEnvelope({ quality, axes } = {}) {
+function getCurrentFilterSliderValue(filters = {}, key) {
+    if (Number.isFinite(filters?.[key])) {
+        return Number(filters[key]);
+    }
+
+    const simplifiedKey = key.replace(/^slider_/u, "simplified_");
+    if (Number.isFinite(filters?.[simplifiedKey])) {
+        return Number(filters[simplifiedKey]);
+    }
+
+    return null;
+}
+
+function getGyroFilterDelta(ratio) {
+    if (!Number.isFinite(ratio) || ratio < 1) {
+        return 0;
+    }
+    if (ratio <= 1.25) {
+        return 3;
+    }
+    if (ratio <= 1.6) {
+        return 4;
+    }
+    return 5;
+}
+
+function getDtermFilterDelta(ratio) {
+    if (!Number.isFinite(ratio) || ratio < 1) {
+        return 0;
+    }
+    if (ratio <= 1.3) {
+        return 5;
+    }
+    if (ratio <= 1.7) {
+        return 6;
+    }
+    return 8;
+}
+
+function buildFilterCandidate(currentValue, delta, reason, evidenceRefs) {
+    const suggestedValue = Math.max(0, Math.round(currentValue - delta));
+    return {
+        suggestedValue,
+        min: suggestedValue,
+        max: currentValue,
+        step: 1,
+        reason,
+        evidenceRefs,
+    };
+}
+
+function getCurrentPidSliderValue(pid = {}, key) {
+    if (Number.isFinite(pid?.[key])) {
+        return Number(pid[key]);
+    }
+
+    const simplifiedKey = key.replace(/^slider_/u, "simplified_");
+    if (Number.isFinite(pid?.[simplifiedKey])) {
+        return Number(pid[simplifiedKey]);
+    }
+
+    return null;
+}
+
+function buildPidIncreaseCandidate(currentValue, delta, reason, evidenceRefs) {
+    const suggestedValue = Math.round(currentValue + delta);
+    return {
+        suggestedValue,
+        min: currentValue,
+        max: suggestedValue,
+        step: 1,
+        reason,
+        evidenceRefs,
+    };
+}
+
+function buildFiltersWriteEnvelope({ quality, axes, diagnostics, staticConfig } = {}) {
+    if (hasHighConfidenceMotorImbalance(diagnostics)) {
+        return {
+            writeableAllowed: false,
+            blockedReason: "mechanical_imbalance_detected",
+            confidence: "high",
+            candidates: {},
+        };
+    }
+
     const hasUsableFft = Object.values(axes || {}).some((axis) => axis?.frequencyDomain?.fftUsable === true);
     const hasFilterAdvice = Object.values(axes || {}).some(
         (axis) => axis?.filterAdvice?.gyroNotch?.direction === "enable" || axis?.filterAdvice?.dtermLowpass?.direction === "lower",
@@ -620,15 +706,72 @@ function buildFiltersWriteEnvelope({ quality, axes } = {}) {
         };
     }
 
+    const currentGyro = getCurrentFilterSliderValue(staticConfig?.filters || {}, "slider_gyro_filter_multiplier");
+    const currentDterm = getCurrentFilterSliderValue(staticConfig?.filters || {}, "slider_dterm_filter_multiplier");
+    const candidates = {};
+
+    FILTER_AXIS_NAMES.forEach((axisName) => {
+        const axis = axes?.[axisName];
+        if (!axis?.frequencyDomain?.fftUsable) {
+            return;
+        }
+
+        const craftClass = axis?.quality?.craftClass || "5-6in";
+        const thresholds = THRESHOLDS_BY_CRAFT_CLASS[craftClass] || THRESHOLDS_BY_CRAFT_CLASS["5-6in"];
+
+        if (Number.isFinite(currentGyro) && axis?.filterAdvice?.gyroNotch?.direction === "enable") {
+            const ratio = axis.frequencyDomain.gyroPeakMagnitude / thresholds.gyroPeakMagnitudeThreshold;
+            const delta = getGyroFilterDelta(ratio);
+            if (delta > 0) {
+                const nextCandidate = buildFilterCandidate(
+                    currentGyro,
+                    delta,
+                    "Repeated frequency-domain gyro peaks suggest stronger gyro filtering.",
+                    [`${axisName}.frequencyDomain.gyroPeakMagnitude`, `${axisName}.filterAdvice.gyroNotch`],
+                );
+                const existing = candidates.slider_gyro_filter_multiplier;
+                if (!existing || nextCandidate.suggestedValue < existing.suggestedValue) {
+                    candidates.slider_gyro_filter_multiplier = nextCandidate;
+                }
+            }
+        }
+
+        if (Number.isFinite(currentDterm) && axis?.filterAdvice?.dtermLowpass?.direction === "lower") {
+            const ratio = axis.frequencyDomain.dtermHighFreqAvg / thresholds.dtermHighFreqThreshold;
+            const delta = getDtermFilterDelta(ratio);
+            if (delta > 0) {
+                const nextCandidate = buildFilterCandidate(
+                    currentDterm,
+                    delta,
+                    "Repeated high-frequency D-term energy suggests stronger D-term filtering.",
+                    [`${axisName}.frequencyDomain.dtermHighFreqAvg`, `${axisName}.filterAdvice.dtermLowpass`],
+                );
+                const existing = candidates.slider_dterm_filter_multiplier;
+                if (!existing || nextCandidate.suggestedValue < existing.suggestedValue) {
+                    candidates.slider_dterm_filter_multiplier = nextCandidate;
+                }
+            }
+        }
+    });
+
+    if (!Object.keys(candidates).length) {
+        return {
+            writeableAllowed: false,
+            blockedReason: "insufficient_filter_evidence",
+            confidence: "low",
+            candidates: {},
+        };
+    }
+
     return {
         writeableAllowed: false,
         blockedReason: "single_log_filter_evidence_requires_confirmation",
         confidence: "medium",
-        candidates: {},
+        candidates,
     };
 }
 
-function buildPidWriteEnvelope({ quality, diagnostics } = {}) {
+function buildPidWriteEnvelope({ quality, diagnostics, axes, staticConfig } = {}) {
     if (quality?.status !== QUALITY_STATUS.USABLE) {
         return {
             writeableAllowed: false,
@@ -647,11 +790,86 @@ function buildPidWriteEnvelope({ quality, diagnostics } = {}) {
         };
     }
 
+    const pidConfig = staticConfig?.pid || {};
+    const candidates = {};
+    const pidAxes = FILTER_AXIS_NAMES.map((axisName) => axes?.[axisName]).filter(Boolean);
+
+    const hasConsistentPIncrease = pidAxes.length >= 2 && pidAxes.every((axis) => axis?.pidAdvice?.p?.direction === "increase");
+    const hasStrongMovingError = pidAxes.length >= 2 && pidAxes.every((axis) => (axis?.timeDomain?.meanErrMoving || 0) >= 35);
+    const hasLowSteadyError = pidAxes.some((axis) => (axis?.timeDomain?.meanErrSteady || 0) <= 5);
+    const hasFilterRisk = pidAxes.some(
+        (axis) =>
+            axis?.filterAdvice?.gyroNotch?.direction === "enable" || axis?.filterAdvice?.dtermLowpass?.direction === "lower",
+    );
+
+    const currentMaster = getCurrentPidSliderValue(pidConfig, "slider_master_multiplier");
+    if (Number.isFinite(currentMaster) && hasConsistentPIncrease && hasStrongMovingError) {
+        candidates.slider_master_multiplier = buildPidIncreaseCandidate(
+            currentMaster,
+            2,
+            "Repeated roll/pitch under-tracking supports a small master multiplier increase.",
+            ["roll.timeDomain.meanErrMoving", "pitch.timeDomain.meanErrMoving"],
+        );
+    }
+
+    const currentFf = getCurrentPidSliderValue(pidConfig, "slider_feedforward_gain");
+    if (
+        Number.isFinite(currentFf) &&
+        pidAxes.some((axis) => axis?.pidAdvice?.ff?.direction === "increase") &&
+        hasStrongMovingError &&
+        hasLowSteadyError
+    ) {
+        candidates.slider_feedforward_gain = buildPidIncreaseCandidate(
+            currentFf,
+            4,
+            "Repeated moving-error under stick demand supports a small feedforward increase.",
+            ["roll.pidAdvice.ff", "pitch.pidAdvice.ff"],
+        );
+    }
+
+    const currentI = getCurrentPidSliderValue(pidConfig, "slider_i_gain");
+    if (
+        Number.isFinite(currentI) &&
+        pidAxes.some((axis) => axis?.pidAdvice?.i?.direction === "increase") &&
+        pidAxes.some((axis) => (axis?.timeDomain?.meanErrSteady || 0) >= 5)
+    ) {
+        candidates.slider_i_gain = buildPidIncreaseCandidate(
+            currentI,
+            2,
+            "Repeated steady-state tracking error supports a small I gain increase.",
+            ["roll.timeDomain.meanErrSteady", "pitch.timeDomain.meanErrSteady"],
+        );
+    }
+
+    const currentD = getCurrentPidSliderValue(pidConfig, "slider_d_gain");
+    if (
+        Number.isFinite(currentD) &&
+        !hasFilterRisk &&
+        pidAxes.length >= 2 &&
+        pidAxes.every((axis) => axis?.pidAdvice?.d?.direction === "increase")
+    ) {
+        candidates.slider_d_gain = buildPidIncreaseCandidate(
+            currentD,
+            3,
+            "Repeated peak-error evidence with no competing filter risk supports a small D gain increase.",
+            ["roll.pidAdvice.d", "pitch.pidAdvice.d"],
+        );
+    }
+
+    if (!Object.keys(candidates).length) {
+        return {
+            writeableAllowed: false,
+            blockedReason: "insufficient_pid_evidence",
+            confidence: "low",
+            candidates: {},
+        };
+    }
+
     return {
         writeableAllowed: false,
         blockedReason: "single_log_pid_requires_multi_log_confirmation",
         confidence: "medium",
-        candidates: {},
+        candidates,
     };
 }
 
@@ -755,8 +973,8 @@ export function analyzeBblLog({ summary, craftContext = {}, staticConfig = {} } 
 
     const writeEnvelope = {
         rates: buildRatesWriteEnvelope(summary, craftContext, staticConfig, quality),
-        filters: buildFiltersWriteEnvelope({ quality, axes }),
-        pid: buildPidWriteEnvelope({ quality, diagnostics }),
+        filters: buildFiltersWriteEnvelope({ quality, axes, diagnostics, staticConfig }),
+        pid: buildPidWriteEnvelope({ quality, diagnostics, axes, staticConfig }),
     };
 
     return {
