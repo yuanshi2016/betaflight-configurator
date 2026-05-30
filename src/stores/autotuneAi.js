@@ -762,9 +762,13 @@ export const useAutotuneAiStore = defineStore("autotuneAi", () => {
     }
 
     function buildScopedFollowUpMessage(scope, userMessage) {
-        const normalizedScope = ["pid", "filters", "rates"].includes(scope) ? scope : "all";
+        const normalizedScope = ["pid", "filters", "rates", "roll", "pitch", "yaw"].includes(scope) ? scope : "all";
         if (normalizedScope === "all") {
             return userMessage;
+        }
+
+        if (["roll", "pitch", "yaw"].includes(normalizedScope)) {
+            return `Focus only on the ${normalizedScope.toUpperCase()} axis.\n\n${userMessage}`;
         }
 
         return `Focus only on the ${normalizedScope.toUpperCase()} group.\n\n${userMessage}`;

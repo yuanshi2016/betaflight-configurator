@@ -681,6 +681,31 @@ describe("autotune AI store defaults", () => {
         });
     });
 
+    it("sends an axis-scoped follow-up prompt to the provider", async () => {
+        const store = useAutotuneAiStore();
+        mockExplainTuningAnalysis.mockResolvedValueOnce("plain follow-up");
+        mockParseAiResponse.mockImplementation(() => ({ summary: "parsed" }));
+
+        store.sessionState.lastPayload = {
+            sourceSummary: { hasBbl: true },
+            localAnalysis: { aggregateQuality: { status: "usable", reason: "all_selected_logs_usable" } },
+        };
+        store.sessionState.conversationHistory = [
+            { role: "user", content: "Initial analysis payload." },
+            { role: "assistant", content: "{\"summary\":\"previous\"}" },
+        ];
+        store.sessionState.followUpInput = "Why is roll still blocked?";
+        store.sessionState.followUpScope = "roll";
+
+        await store.sendFollowUp();
+
+        const providerHistory = mockExplainTuningAnalysis.mock.calls[0][2];
+        expect(providerHistory.at(-1)).toEqual({
+            role: "user",
+            content: "Focus only on the ROLL axis.\n\nWhy is roll still blocked?",
+        });
+    });
+
     it("clears stale AI output when importing a new input file", async () => {
         const store = useAutotuneAiStore();
         store.sessionState.aiResponse = { summary: "stale" };

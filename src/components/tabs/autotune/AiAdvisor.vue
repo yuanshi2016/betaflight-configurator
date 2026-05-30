@@ -789,6 +789,9 @@ const followUpScopeOptions = computed(() => [
     { label: t("autotuneAiFollowUpScopePid"), value: "pid" },
     { label: t("autotuneAiFollowUpScopeFilters"), value: "filters" },
     { label: t("autotuneAiFollowUpScopeRates"), value: "rates" },
+    { label: t("autotuneAiFollowUpScopeRoll"), value: "roll" },
+    { label: t("autotuneAiFollowUpScopePitch"), value: "pitch" },
+    { label: t("autotuneAiFollowUpScopeYaw"), value: "yaw" },
 ]);
 
 const supportsThinkingMode = computed(() => providerSettings.provider.startsWith("deepseek"));

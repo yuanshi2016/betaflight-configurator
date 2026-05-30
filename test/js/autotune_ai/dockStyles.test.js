@@ -356,23 +356,35 @@ describe("autotune AI dock styles", () => {
         expect(component).toContain("autotuneAiFollowUpScopePid");
         expect(component).toContain("autotuneAiFollowUpScopeFilters");
         expect(component).toContain("autotuneAiFollowUpScopeRates");
+        expect(component).toContain("autotuneAiFollowUpScopeRoll");
+        expect(component).toContain("autotuneAiFollowUpScopePitch");
+        expect(component).toContain("autotuneAiFollowUpScopeYaw");
 
         expect(englishMessages).toContain("autotuneAiFollowUpScope");
         expect(englishMessages).toContain("autotuneAiFollowUpScopeAll");
         expect(englishMessages).toContain("autotuneAiFollowUpScopePid");
         expect(englishMessages).toContain("autotuneAiFollowUpScopeFilters");
         expect(englishMessages).toContain("autotuneAiFollowUpScopeRates");
+        expect(englishMessages).toContain("autotuneAiFollowUpScopeRoll");
+        expect(englishMessages).toContain("autotuneAiFollowUpScopePitch");
+        expect(englishMessages).toContain("autotuneAiFollowUpScopeYaw");
 
         expect(chineseMessages).toContain("autotuneAiFollowUpScope");
         expect(chineseMessages).toContain("autotuneAiFollowUpScopeAll");
         expect(chineseMessages).toContain("autotuneAiFollowUpScopePid");
         expect(chineseMessages).toContain("autotuneAiFollowUpScopeFilters");
         expect(chineseMessages).toContain("autotuneAiFollowUpScopeRates");
+        expect(chineseMessages).toContain("autotuneAiFollowUpScopeRoll");
+        expect(chineseMessages).toContain("autotuneAiFollowUpScopePitch");
+        expect(chineseMessages).toContain("autotuneAiFollowUpScopeYaw");
 
         expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScope");
         expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopeAll");
         expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopePid");
         expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopeFilters");
         expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopeRates");
+        expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopeRoll");
+        expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopePitch");
+        expect(traditionalChineseMessages).toContain("autotuneAiFollowUpScopeYaw");
     });
 });
